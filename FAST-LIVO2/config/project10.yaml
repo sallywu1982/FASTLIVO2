@@ -1,0 +1,116 @@
+# Project_job10 shuttle 数据集配置（convert_project10 产物 project10.bag）
+# 数据: 固态雷达 10.4Hz / M相机 11.3Hz / IMU 200Hz(ICM40609, 200Hz, acc 已转 m/s^2)
+# 时间: 全部为 epoch-UTC（由 GPS 周内秒换算, 含 -18s 闰秒）
+#
+# 外参说明（重要）:
+#   extrinsic_R/T = 雷达→IMU。IMU 芯片相对机体有 19.8° 安装楔角（由静止段重力实测），
+#   点云已还原为随机体运动的原始坐标（设备 INS 调平已用 Mahony 滤波反旋转消除，
+#   见 convert_project10/scripts/unlevel_lidar.py）。
+#   重力可观测部分已精确；剩余未定的是绕重力的常量偏航 β，无法从静态数据确定。
+#   ↓ 当前主候选 β=-90°（依据文件头 M2I Z=-90°）。若 LIO 立即发散，按注释依次试其余候选。
+
+common:
+  img_topic: "/left_camera/image"
+  lid_topic: "/livox/lidar"
+  imu_topic: "/livox/imu"
+  img_en: 1
+  lidar_en: 1
+  ros_driver_bug_fix: false
+
+extrin_calib:
+  extrinsic_T: [0.023, -0.011, 0.044]
+  # 主候选 β=0°（数据测定: 俯仰过渡段旋转轴向拟合 β=2°±, 见 convert_project10/scripts/solve_beta.py;
+  #   β=0 轴向误差 27.8° vs β=±90 为 87-90°、β=180 为 144°，判别决定性）
+  extrinsic_R: [0.941308, -0.005359, -0.337508,
+                -0.005359, 0.999511, -0.030819,
+                0.337508, 0.030819, 0.940818]
+  # --- 备选 β=-90°（文件头 M2I Z=-90 的字面值, 若主候选 LIO 发散再试） ---
+  # extrinsic_R: [0.005359, -0.999511, 0.030819,
+  #               0.941308, -0.005359, -0.337508,
+  #               0.337508, 0.030819, 0.940818]
+  # --- 备选 β=+90° ---
+  # extrinsic_R: [-0.005359, 0.999511, -0.030819,
+  #               -0.941308, 0.005359, 0.337508,
+  #               0.337508, 0.030819, 0.940818]
+  # --- 备选 β=180° ---
+  # extrinsic_R: [-0.941308, 0.005359, 0.337508,
+  #               0.005359, -0.999511, 0.030819,
+  #               0.337508, 0.030819, 0.940818]
+  # Rcl/Pcl 初值 = 文件头 M 相机 Camera2B1 角(-2.685,-71.275,92.764)° + 杆臂合成（偏航未定, 建议 FAST-Calib 或在线精调）
+  Rcl: [-0.015481, 0.320653, 0.947070,
+        -0.999879, -0.003855, -0.015038,
+        -0.001171, -0.947189, 0.320674]
+  Pcl: [0.124473, 0.009503, 0.060680]
+
+time_offset:
+  imu_time_offset: 0.0
+  img_time_offset: 0.0     # 相机触发已有硬件同步; 文件头 XRayDelay=1ms 可在此补偿 0.001
+  exposure_time_init: 0.0
+
+preprocess:
+  point_filter_num: 1
+  filter_size_surf: 0.1
+  lidar_type: 1            # livox CustomMsg 路径（转换脚本构造的 CustomMsg）
+  scan_line: 1             # 所有点 line=0
+  blind: 0.5
+
+vio:
+  max_iterations: 5
+  outlier_threshold: 1000
+  img_point_cov: 100
+  patch_size: 8
+  patch_pyrimid_level: 4
+  normal_en: true
+  raycast_en: false
+  inverse_composition_en: false
+  exposure_estimate_en: true
+  inv_expo_cov: 0.1
+
+imu:
+  imu_en: true
+  imu_int_frame: 30
+  acc_cov: 0.5
+  gyr_cov: 0.3
+  b_acc_cov: 0.0001
+  b_gyr_cov: 0.0001
+
+lio:
+  max_iterations: 5
+  dept_err: 0.02
+  beam_err: 0.05
+  min_eigen_value: 0.0025
+  voxel_size: 0.5
+  max_layer: 2
+  max_points_num: 50
+  layer_init_num: [5, 5, 5, 5, 5]
+
+local_map:
+  map_sliding_en: false
+  half_map_size: 100
+  sliding_thresh: 8
+
+uav:
+  imu_rate_odom: false
+  gravity_align_en: false
+
+publish:
+  dense_map_en: true
+  pub_effect_point_en: false
+  pub_plane_en: false
+  pub_scan_num: 1
+  blind_rgb_points: 0.0
+
+evo:
+  seq_name: "project10"
+  pose_output_en: false
+
+pcd_save:
+  pcd_save_en: false
+  type: 0
+  colmap_output_en: false
+  filter_size_pcd: 0.15
+  interval: -1
+
+image_save:
+  img_save_en: false
+  interval: 1

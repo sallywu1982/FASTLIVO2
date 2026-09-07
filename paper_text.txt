@@ -1,0 +1,1696 @@
+PAGES: 30
+
+===== PAGE 1 =====
+1
+FAST-LIVO2: Fast, Direct LiDAR-Inertial-Visual
+Odometry
+Chunran Zheng1, Wei Xu1, Zuhao Zou1, Tong Hua1, Chongjian Yuan1, Dongjiao He1, Bingyang Zhou1, Zheng
+Liu1, Jiarong Lin1, Fangcheng Zhu1, Yunfan Ren1, Rong Wang2, Fanle Meng2, Fu Zhang1†
+Fig. 1: FAST-LIVO2 mapping results generated in real time. (a)-(c) showcase airborne mapping, (d) represents a retail street
+collected with a handheld device, and (e) demonstrates an experiment where a UAV carrying a LiDAR, camera and inertial
+sensor perform real-time state estimation (i.e., FAST-LIVO2), trajectory planning, and tracking control all on its onboard
+computer. In (d)-(e), blue lines represent the computed trajectory. In (e1)-(e4), white points indicate the LiDAR scan at that
+moment, and colored lines depict the planned trajectory. (e1) and (e4) mark areas of LiDAR degeneration. (e2) and (e3) show
+obstacle avoidance. (e5) and (e6) depict the camera first-person view from indoor to outdoor, highlighting large illumination
+variation from sudden overexposure to normal (see our accompanying video on YouTube: youtu.be/aSAwVqR22mo).
+Abstract—This paper proposes FAST-LIVO2: a fast, direct ments, we use a sequential update strategy in the Kalman filter.
+LiDAR-inertial-visual odometry framework to achieve accurate To enhance the efficiency, we use direct methods for both the
+and robust state estimation in Simultaneous Localization and visualandLiDARfusion,wheretheLiDARmoduleregistersraw
+Mapping (SLAM) tasks and provide great potential in real- points without extracting edge or plane features and the visual
+time, onboard robotic applications. FAST-LIVO2 fuses the IMU, module minimizes direct photometric errors without extracting
+LiDAR and image measurements, efficiently through an error- ORB or FAST corner features. The fusion of both visual and
+state iterated kalman filter (ESIKF). To address the dimension LiDAR measurements is based on a single unified voxel map
+mismatchbetweentheheterogeneousLiDARandimagemeasure- where the LiDAR module constructs the geometric structure for
+registering new LiDAR scans and the visual module attaches
+image patches to the LiDAR points (i.e., visual map points)
+†Correspondingauthor(email:fuzhang@hku.hk)
+enablingnewimagealignment.Toenhancetheaccuracyofimage
+1Mechatronics and Robotic Systems (MaRS) Laboratory, Department of
+alignment, we use plane priors from the LiDAR points in the
+MechanicalEngineering,UniversityofHongKong,HongKongSAR,China.
+2Information Science Academy of China Electronics Technology Group voxel map (and even refine the plane prior in the alignment
+Corporation process) and update the reference patch dynamically after new
+4202
+guA
+82
+]OR.sc[
+2v53041.8042:viXra
+
+===== PAGE 2 =====
+2
+images are aligned. Furthermore, to enhance the robustness visualSLAM.Despitethesestrengths,LiDARSLAMexhibits
+of image alignment, FAST-LIVO2 employs an on-demanding severalsignificantshortcomings.Ononehand,thepointcloud
+raycast operation and estimates the image exposure time in real
+maps it reconstructs, albeit detailed, lack color information,
+time. We conduct extensive experiments on both benchmark
+thereby reducing their information scale. On the other hand,
+and private datasets, demonstrating that our proposed system
+significantlyoutperformsotherstate-of-the-artodometrysystems LiDAR SLAM performance tends to deteriorate in environ-
+in terms of accuracy, robustness, and computation efficiency. ments presenting insufficient geometric constraints, such as
+Moreover, the effectiveness of key modules in the system is also narrow tunnels, a single and extended wall, etc.
+validated. Lastly, we detail three applications of FAST-LIVO2:
+Asthedemandtooperateintelligentrobotsintherealworld
+UAVonboardnavigationdemonstratingthesystem’scomputation
+grows, especially in environments that often lack structure or
+efficiency for real-time onboard navigation, airborne mapping
+showcasing the system’s mapping accuracy, and 3D model ren- texture, it is becoming clear that existing systems relying on
+dering(mesh-basedandNeRF-based)underscoringthesuitability a single sensor cannot provide the accurate and robust pose
+of our reconstructed dense map for subsequent rendering tasks. estimation as required. To address this issue, the fusion of
+We open source our code, dataset and application of this work
+commonly-used sensors such as LiDAR, camera, and IMU is
+on GitHub1 to benefit the robotics community.
+gaining increasing attention. This strategy not only combines
+Index Terms—Simultaneous Localization and Mapping
+the strengths of these sensors to provide enhanced pose
+(SLAM), Sensor Fusion, 3D Reconstruction, Aerial Navigation.
+estimation,butalsoaidsintheconstructionofaccurate,dense,
+andcoloredpointcloudmaps,eveninenvironmentswherethe
+I. INTRODUCTION performance of individual sensors degenerate.
+IN recent years, simultaneous localization and mapping Efficient and accurate LiDAR-inertial-visual odometry
+(SLAM) technology has seen significant advancements, (LIVO) and mapping are still challenging problems: 1) The
+particularly in real-time 3D reconstruction and localization in entire LIVO system is tasked with processing LiDAR mea-
+unknown environments. Due to its ability to estimate poses surements, consisting of hundreds to thousands of points per
+and reconstruct maps in real time, SLAM has become indis- second, as well as high-rate, high-resolution images. The
+pensable for various robot navigation tasks. The localization challenge of fully utilizing such a vast amount of data, partic-
+process delivers crucial state feedback for the robot’s onboard ularlywithlimitedonboardresources,necessitatesexceptional
+controllers,whilethedense3Dmapprovideskeyenvironmen- computational efficiency; 2) Many existing systems typically
+tal information, such as free spaces and obstacles, essential incorporate a LiDAR-Inertial Odometry (LIO) subsystem and
+for effective trajectory planning. A colored map also carries a Visual-Inertial Odometry (VIO) subsystem, each necessitat-
+substantial semantic information, enabling a vivid representa- ing the extraction of features from visual and LiDAR data
+tionoftherealworldthatopensupvastpotentialapplications, respectively to reduce computational load. In environments
+suchasvirtualandaugmentedreality,3Dmodeling,androbot- that lack structure or texture, this extraction process often
+human interactions. results in limited feature points. Furthermore, to optimize
+Currently, several SLAM frameworks have been success- feature extraction, extensive engineering adaptations are es-
+fully implemented with single-measurement sensors, primar- sential to accommodate the variability in LiDAR scanning
+ily cameras [1]–[4] or LiDAR [5]–[7]. Although visual and patterns and point densities; 3) To reduce computational
+LiDAR SLAM have shown promise in their own domains, demands and achieve tighter integration between camera and
+each has inherent limitations that constrain their performance LiDAR measurements, a unified map is essential to man-
+in various scenarios. age sparse points and the observed high-resolution image
+Visual SLAM, leveraging cost-effective CMOS sensors and measurements simultaneously. However, designing and main-
+lenses, is capable of establishing accurate data associations, taining such maps are particularly challenging considering
+thereby achieving a certain level of localization accuracy. The the heterogeneous measurements of LiDAR and cameras; 4)
+abundance of color information further enriches the semantic To ensure the accuracy of the reconstructed colored point
+perception.Furtherleveragingthisenhancedscenecomprehen- cloud, pose estimation needs to achieve pixel-level accuracy.
+sion, deep learning methods are employed for robust feature Meetingthisstandardpresentsconsiderablechallenges:proper
+extraction and dynamic object filtering. However, the lack hardwaresynchronization,rigorouspre-calibrationofextrinsic
+of direct depth measurement in visual SLAM necessitates parameters between LiDAR and cameras, precise recovery of
+concurrent optimization of map points via operations such as exposuretime,andafusionstrategycapableofreachingpixel-
+triangulation or depth filtering, which introduces significant level accuracy in real time.
+computational overhead that often limits map accuracy and Motivated by these issues, we propose FAST-LIVO2, a
+density. Visual SLAM also encounters numerous other lim- high-efficiency LIVO system that tightly integrates LiDAR,
+itations, such as varying measurement noise across different imageandIMUmeasurementsthroughasequentiallyupdated
+scales, sensitivity to illumination changes, and the impact of error-stateiteratedKalmanfilter(ESIKF).Withthepriorfrom
+texture-less environments on data association. IMU propagation, the system state is updated sequentially,
+LiDAR SLAM, utilizing LiDAR sensors, obtains precise first by the LiDAR measurements and then by the image
+depth measurements directly, offering superior precision and measurements,bothutilizingdirectmethodsbasedonasingle
+efficiency in localization and mapping tasks compared with unified voxel map. Specifically, in the LiDAR update, the
+systemregistersrawpointstothemaptoconstructandupdate
+1https://github.com/hku-mars/FAST-LIVO2 its geometric structure, and in the visual update, the system
+
+===== PAGE 3 =====
+3
+reuses LiDAR map points as the visual map points directly Taking a step further to underline the real-world applicabil-
+without extracting, triangulating, or optimizing any visual ity and versatility of our system, we deploy three distinctive
+features from images. The chosen visual map points in the applications. Firstly, fully onboard autonomous UAV naviga-
+map are attached with reference image patches previously tion, demonstrating the system’s real-time capabilities, marks
+observed and then projected to the current image to align a pioneering instance of employing a LiDAR-inertial-visual
+its pose by minimizing the direct photometric errors (i.e., system for real-world autonomous UAV flights. Secondly,
+sparseimagealignment).Toimprovetheaccuracyintheimage airbornemappingshowcasesthesystem’spixel-levelprecision
+alignment, FAST-LIVO2 dynamically updates the reference under structure-less environments in practical use. Lastly, the
+patches and uses the plane priors obtained from LiDAR high-quality generation of mesh, texturing, and NeRF models
+points. For improved computation efficiency, FAST-LIVO2 underscores the system’s suitability for rendering tasks. We
+uses LiDAR points to identify visual map points visible from make our code and dataset available on GitHub.
+thecurrentimageandconductanon-demandingvoxelraycast
+II. RELATEDWORKS
+in case of no LiDAR points. FAST-LIVO2 also estimates the
+exposure time in real time to handle illumination variation. A. Direct Methods
+FAST-LIVO2 is developed based on FAST-LIVO first pro- Direct methods stand out as a prominent approach for fast
+posed in our previous work [8]. The new contributions com- pose estimation in both visual and LiDAR SLAM. Unlike
+pared to FAST-LIVO are listed below: feature-based methods [5, 6, 9, 10] which necessitate the
+extraction of salient feature points (e.g., corners and edge
+1) We propose an efficient ESIKF framework with sequen-
+pixels in images; plane and edge points in LiDAR scans)
+tial update to address the dimension mismatch between
+and the generation of robust descriptors for matching, direct
+LiDAR and visual measurements, improving the robust-
+methods directly leverage raw measurements to optimize the
+ness of FAST-LIVO that uses asynchronous updates.
+sensor pose [11] by minimizing an error function based on
+2) We use (and even refine) plane priors from LiDAR
+photometric error or point-to-plane residuals, e.g., [3, 12]–
+points for improved accuracy. In contrast, FAST-LIVO
+[14].Byeliminatingthetime-consumingfeatureextractionand
+assumes all pixels in a patch share the same depth, a
+matching, direct methods offer fast pose estimation. Nonethe-
+wild assumption significantly reducing the accuracy of
+less, the absence of feature matching requires fairly accurate
+affine warping in image alignment.
+state prior estimation to avoid local minima.
+3) We propose a reference patch update strategy to improve
+DirectmethodsinvisualSLAMcanbebroadlycategorized
+the accuracy of image alignment, by selecting high-
+intodensedirect,semi-densedirect,andsparsedirectmethods.
+quality, inlier reference patches that have large parallax
+Dense direct methods, predominantly adopted for RGB-D
+and sufficient texture details. FAST-LIVO selects the
+cameraswithfulldepthmeasurementsasexemplifiedby[15]–
+reference patch based on proximity to the current view,
+[17], apply image-to-model alignment for pose estimation. In
+oftenresultinginlow-qualityreferencepatchesdegrading
+contrast, semi-dense direct methods [3, 18] implement direct
+the accuracy.
+image alignment by capitalizing on pixels with significant
+4) Weconductonlineexposuretimeestimationforhandling
+gray-level gradients for estimation. Sparse direct methods
+environment illumination variation. FAST-LIVO did not
+[2, 12] focus on delivering accurate state estimation through
+address this issue, leading to poor convergence in image
+onlyafewwell-selectedrawpatches,thusfurtherdiminishing
+alignment under significant lighting changes.
+the computational burden in comparison to both dense and
+5) We propose on-demand voxel raycasting to enhance the
+semi-dense direct methods.
+system robustness in the absence of LiDAR point mea-
+Unlike direct visual SLAM methods, direct LiDAR SLAM
+surementscausedbyLiDARcloseproximityblindzones,
+systems[13,14,19,20]donotdistinguishbetweendenseand
+an issue not considered in FAST-LIVO.
+sparse approaches and commonly use spatially-downsampled
+Each of the above contributions are evaluated in com- or temporally-downsampled raw points in each scan to con-
+prehensive ablation studies to verify their effectiveness. We struct constraints for pose optimization.
+implement the proposed system as practical open software, In our work, we harness the principles of the direct method
+meticulously optimized for real-time operation on both Intel for both LiDAR and visual modules. The LiDAR module of
+and ARM processors. The system is versatile, supporting our system is adapted from VoxelMap [14], and the visual
+multi-line spinning LiDARs, emerging solid-state LiDARs model is based on a variant of sparse direct method [12].
+withunconventionalscanningpatterns,aswellasbothpinhole Whiledrawinginspirationfromsparsedirectimagealignment
+cameras and various fisheye cameras. in [12], our visual module differs by re-utilizing the LiDAR
+Besides,weconductextensiveexperimentson25sequences points as visual map points, thus mitigating the intensive
+of public datasets (i.e., Hilti and NTU-VIRAL datasets), backendcomputations(i.e.,featurealignment,slidingwindow
+alongside various representative private datasets, enabling a optimization and/or depth filtering).
+comparison with other state-of-the-art SLAM systems (e.g.,
+R3LIVE, LVI-SAM, FAST-LIO2, etc). Both qualitative and B. LiDAR-visual(-inertial) SLAM
+quantitative results demonstrate that our proposed system The incorporation of multiple sensors in LiDAR-visual-
+significantly outpaces other counterparts in terms of accuracy inertial SLAM equips the system with the capability to han-
+and robustness at a reduced computation cost. dle a wide range of challenging environments, particularly
+
+===== PAGE 4 =====
+4
+when one sensor experiences failure or partial degeneration. time and conducts photometric calibration in advance [38],
+Motivated by this, the research community has seen the which enables the system to recover the radiance of map
+emergence of various LiDAR-visual-inertial SLAM systems. points. Unlike most previously mentioned LiDAR-inertial-
+Existingmethodscangenerallybedividedintotwocategories: visual systems that rely on feature-based methods for both
+loosely coupled and tightly coupled. The classification can be LIOandVIOsubsystems,R3LIVEseries[36,37]adoptdirect
+determined from two perspectives: the state estimation level methods for both without feature extraction, enabling them to
+and the raw measurement level. At the state estimation level, capture subtle environmental features even in texture-less or
+the key is whether the estimate from one sensor serves as an structure-less scenarios.
+optimization objective in another sensor’s model. At the raw Our system also jointly estimates the state using LiDAR,
+measurementlevel,itinvolveswhetherrawdatafromdifferent image and IMU data, and maintains a tightly-coupled voxel
+sensors are combined. map at the measurement level. Furtheremore, our system uses
+Zhangetal.proposeaLiDAR-Visual-InertialSLAMsystem direct methods, harnessing raw LiDAR points for LiDAR
+[21] that is loosely coupled at the state estimation level. In scan registration and employing raw image patches for visual
+this system, VIO subsystem only provides the initial pose tracking.ThekeydifferencebetweenoursystemandR3LIVE
+for the scan registration in LIO subsystem, instead of being (or R3LIVE++) is that R3LIVE (and R3LIVE++) operate at
+optimized jointly with the scan registration. VIL-SLAM [22] anindividualpixellevelintheVIO,whileoursystemoperates
+employs a similar loosely-coupled method, not utilizing joint at image patch levels. This difference bestows our system
+optimization of LiDAR, camera, and IMU measurements. with marked advantages. Firstly, in terms of robustness, our
+Somesystems(e.g.,DEMO[23],LIMO[24],CamVox[25], methodology uses a simplified, one-step frame-to-map sparse
+[26]) use 3D LiDAR points to provide depth measurements image alignment for pose estimation, mitigating the heavy
+for the visual module [1, 4, 27]. While these systems exhibit reliance on an accurate initial state that is has to be obtained
+measurement-leveltightcoupling,theyremainloosely-coupled by a frame-to-frame optical flow in R3LIVEs. Consequently,
+instateestimation,primarilyduetotheabsenceofconstraints oursystemsimplifiesandimprovesuponthetwo-stageframe-
+directly derived from LiDAR measurements at state estima- to-frame and frame-to-map operations in R3LIVE. Secondly,
+tion. Another issue arises as 3D LiDAR points do not have from a computational standpoint, the VIO in R3LIVE pre-
+a one-to-one correspondence with 2D image feature points dominantlyemploysadensedirectmethodwhichiscomputa-
+and/or lines due to mismatched resolutions. This mismatch tionally expensive, necessitating extensive points for residual
+requires interpolation in depth association, introducing po- construction and rendering. In contrast, our sparse direct
+tential errors. To address this, DVL-SLAM [28] employs a method provides enhanced computational efficiency. Lastly,
+direct method for visual tracking, wherein the LiDAR points oursystemexploitsinformationattheresolutionofrawimage
+are directly projected into the image to ascertain the depth of patches, whereas R3LIVE is capped at the resolution of its
+corresponding pixel positions. point map.
+The works mentioned above have not achieved tight cou- The visual module of our system is most similar to DV-
+plingatthestateestimationlevel.Inpursuitofhigheraccuracy LOAM [39], SDV-LOAM [40] and LVIO-Fusion [41], which
+and robustness, many recent studies have emerged that jointly projectsLiDARpointsattachedwithpatchesintoanewimage
+optimize sensor data in a tightly-coupled manner. To name a and tracks the image by minimizing the direct photometric
+few, LIC-Fusion [29] tightly fuses IMU measurements, sparse error. However, they have several key differences, such as the
+visual features, and LiDAR plane and edge features based on use of separate maps for vision and LiDAR, reliance on the
+the MSCKF [30] framework. The subsequent LIC-Fusion2.0 assumption of constant depth in patch warping in the visual
+[31]enhancesLiDARposeestimationbyimplementingplane- module,loosely-couplingatthestateestimationlevel,andtwo
+feature tracking within a sliding window. VILENS [32] offers stages of frame-to-frame and frame-to-keyframes for image
+ajointoptimizationofvisual,LiDAR,andinertialdatathrough alignment. In contrast, our system tightly integrates frame-
+aunifiedfactorgraph,relyingonfixedlagsmoothing.R2LIVE to-map image alignment, LiDAR scan registration, and IMU
+[33] tightly fuses the LiDAR, camera and IMU measurements measurements in an iterated Kalman filter. Besides, thanks to
+in an on-manifold iterated Kalman filter [34]. For the VIO the single unified map for both LiDAR and visual modules,
+subsystem in R2LIVE, a sliding window optimization is used our system can directly employ the plane priors provided by
+to triangulate the locations of visual features in the map. the LiDAR points to accelerate the image alignment.
+Several systems achieve complete tight coupling at both
+the measurement and state estimation levels. LVI-SAM [35]
+III. SYSTEMOVERVIEW
+fuses the LiDAR, visual and inertial sensors in a tightly-
+coupled smoothing and mapping framework, which is built The overview of our system is shown in Fig. 2, which
+atop a factor graph. The VIO subsystem performs visual contains four sections: ESIKF (Section IV), Local Mapping
+featuretrackingandextractsfeaturedepthusingLiDARscans. (Section V), LiDAR Measurement Model (Section VI), and
+R3LIVE [36] constructs the geometric structure of the global Visual Measurement Model (Section VII).
+map by LIO and renders map texture by VIO. These two The asynchronously-sampled LiDAR points are first re-
+subsystems estimate the system state jointly by fusing their combined into scans at the camera’s sampling time through
+respective LiDAR or visual data with IMUs. The advanced scan recombination. Then, we tightly couple the LiDAR,
+version, R3LIVE++ [37], estimates exposure time in real imageandinertialmeasurementsviaanESIKFwithsequential
+
+===== PAGE 5 =====
+5
+Fig. 2: System overview of FAST-LIVO2.
+TABLE I: Some Important Notations t t
+k-1 k
+Time
+Notations Explanation
+10~50Hz
+⊞/⊟ Theencapsulated“boxplus”and Camera
+“boxminus”operationsonthestatemanifold Forward propagation
+G(·) Avector(·)inglobalworldframe IMU 100~250Hz
+C(·) Avector(·)incameraframe
+ITL TheextrinsicofLiDARframew.r.t.IMUframe LiDAR 100~500kHz Backward propagation
+CTI TheextrinsicofIMUframew.r.t.cameraframe points
+GTI TheposeofIMUframeattimek w.r.t.theglobalframe
+x,x (cid:98),x¯ Theground-truth,predictedandupdatedestimationofx
+x
+(cid:98)
+κ Theκ-thupdateofx
+δx Theerrorstatebetweenground-truthxanditsestimation Fig.3:Illustrationofscanrecombination,forwardpropagation
+and backward propagation applied to input data.
+state update, where the system state is updated sequentially,
+first by the LiDAR measurements and then by the image the global frame (denoted as G). Besides, we assume that the
+measurements,bothutilizingdirectmethodsbasedonasingle three sensors are rigidly attached and the extrinsic, defined in
+unified voxel map (Section IV). To construct the LiDAR Table I, are pre-calibrated. Then, the discrete state transition
+measurement model in the ESIKF update (Section VI), we model at the i-th IMU measurement is:
+computetheframe-to-mappoint-to-planeresidual.Toestablish
+x =x ⊞(∆tf(x ,u ,w )) (1)
+visualmeasurementmodel(SectionVII),weextractthevisual i+1 i i i i
+map points within the current FoV from the map, making use where ∆t is the IMU sample period, the state x, input u,
+of visible voxel query and on-demand raycasting; after the process noise w, and function f are defined as follows:
+extraction, we identify and discard outlier visual map points
+M≜SO(3)×R16, dim(M)=19
+(e.g., points that are occluded or exhibit depth discontinuity);
+we then compute frame-to-map image photometric errors for x≜(cid:2)GRT GpT GvT bT bT GgT τ (cid:3)T ∈M
+I I I g a
+visual update. u≜(cid:2) ωT aT(cid:3)T , w≜ (cid:104) nT nT nT nT n (cid:105)T
+ThelocalmapforbothvisualandLiDARupdatesisavoxel- m m g a bg ba τ
+map structure (Section V): the LiDAR points construct and  ω −b −n 
+m g g
+update the map’s geometric structure, while the visual images 1
+Gv + (GR (a −b −n )+Gg)∆t
+append image patches to selected map points (i.e., visual map  I 2 I m a a 
+ 
+points)andupdatereferencepatchesdynamically.Theupdated  GR (a −b −n )+Gg 
+f(x,u,w)= I m a a 
+reference patches have their normal vectors further refined in  n 
+ bg 
+a separate thread.  n 
+ ba 
+ 0 
+3×1
+IV. ERROR-STATEITERATEDKALMANFILTERWITH n τ
+SEQUENTIALSTATEUPDATE (2)
+where GR , Gp , and Gv respectively denote the IMU
+This section outlines the system’s architecture, based on I I I
+attitude, position, and velocity in the global frame, Gg is the
+the sequentially-updated Error-State Iterated Kalman Filter
+gravity vector in the global frame, τ is the inverse camera
+(ESIKF) framework.
+exposure time relative to the first frame, n is the Gaussian
+τ
+A. Notations and State Transition Model
+noise that models τ as a random walk, ω and a are the
+m m
+In our system, we assume the time offsets among the three raw IMU measurements, n and n are measurement noises
+g a
+sensors (LiDAR, IMU and camera) are known, which can be in ω and a , b and b are IMU bias, which are modeled
+m m a g
+calibrated or synchronized in advance. We take IMU frame as random walk driven by Gaussian noise n and n ,
+bg ba
+(denoted as I) as the body frame and the first body frame as respectively.
+
+===== PAGE 6 =====
+6
+Algorithm 1: Sequential State Update We denote the above prior distribution as p(x) and the
+measurement models for the LiDAR and camera as:
+1 Scan recombination to synchronize LiDAR and image
+(cid:20) (cid:21) (cid:20) (cid:21)
+data at the camera rate; y l = h l (x,v l ) (4)
+2 Forward propagation to obtain state prediction x (cid:98) and y c h c (x,v c )
+its covariance P(cid:98); where v ∼ N(0,Σ ) and v ∼ N(0,Σ ) respectively
+l vl c vc
+3 Backward propagation for LiDAR points motion denote the measurement noises for the LiDAR and camera.
+compensation; A standard ESIKF [43] would update the state x using
+4 // Point-to-plane LiDAR update all the current measurements, including both LiDAR mea-
+5 κ=−1, x (cid:98) κ=0 =x (cid:98) ; surement y l and image measurements y c . However, LiDAR
+6 repeat andimagemeasurementsaretwodifferentsensingmodalities,
+7 κ=κ+1; whose data dimensions do not match. Furthermore, the fusion
+8 Compute residual zκ l and Jacobin Hκ l ; of image measurement may be performed at various levels of
+9 Compute the state update x (cid:98) κ+1; the image pyramid. To address the dimension mismatch and
+10 until ∥x (cid:98) κ+1⊟x (cid:98) κ∥<ϵ; givemoreflexibilityforeachmodule,weproposeasequential
+11 x (cid:98) =x (cid:98) κ+1, P(cid:98) =(I−KH)P(cid:98); update strategy. This strategy is theoretically equivalent to the
+12 // Sparse direct visual update standard update using all measurements, assuming statistical
+13 level=−1; independenceofLiDARmeasurementsy l andimagemeasure-
+14 repeat mentsy c giventhestatevectorx(i.e.,measurementscorrupted
+15 κ=−1, x (cid:98) κ=0 =x (cid:98) ; by statistically independent noise).
+16 level=level+1; To introduce the sequential update, we rewrite the total
+17 repeat conditional distribution for the current state x as:
+18 κ=κ+1; p(x|y ,y )∝p(x,y ,y )=p(y |x,y )p(x,y )
+19 Compute residual zκ c and Jacobin Hκ c ; l c =p(y |x l )p c (y |x)p( c x) l l (5)
+20 Compute the state update x (cid:98) κ+1; c (cid:124) l (cid:123)(cid:122) (cid:125)
+21 until ∥x (cid:98) κ+1⊟x (cid:98) κ∥<ϵ; ∝p(x|yl)
+22 x (cid:98) =x (cid:98) κ+1; Equation (5) implies that the total conditional distribution
+23 until level>=2; p(x|y l ,y c ) can be obtained by two sequential Bayesian
+24 x¯ =x (cid:98) κ+1; P¯ =(I−KH)P(cid:98). updates. The first step fuses only the LiDAR measurement
+y with the IMU-propagated prior distribution p(x) to obtain
+l
+the distribution p(x|y ):
+l
+B. Scan Recombination
+p(x|y )∝p(y |x)p(x) (6)
+l l
+We employ the scan recombination to segment the high-
+The second step then fuses the camera measurement y with
+frequency, sequentially-sampled LiDAR raw points into dis- c
+p(x|y ) to obtain the final posterior distribution of x:
+tinct LiDAR scans at the camera sampling moments, as l
+depicted in Fig. 3. This ensures both camera and LiDAR data p(x|y ,y )∝p(y |x)p(x|y ) (7)
+l c c l
+aresynchronizedatthesamefrequency(e.g.,10Hz),allowing
+Interestingly, the two fusion in (6) and (7) follow the same
+for update of state at the same time.
+form:
+C. Propagation
+q(x|y)∝q(y|x)q(x) (8)
+In the ESIKF framework, the state and covariance are
+propagated from time t , when the last LiDAR scan and To conduct the fusion in (8) for either LiDAR or image
+k−1
+imageframearereceived,totimet ,whenthecurrentLiDAR measurements, we detail the prior distribution q(x) and mea-
+k
+scan and image frame are received. This forward propagation surement model q(y|x) as follows. For the prior distribution
+predicts the state at each IMU input u
+i
+during t
+k−1
+and t
+k
+, q(x), denote it as x=x
+(cid:98)
+⊞δx with δx∼N(0,P(cid:98)). In case of
+by setting the process noise w
+i
+in (1) to zero. Denote the the LiDAR update (i.e., the first step), (x
+(cid:98)
+,P(cid:98)) is the state and
+propagatedstateasx
+(cid:98)
+andcovarianceasP(cid:98),whichwillserveas covariance obtained from the propagation step. In case of the
+apriordistributionforthesubsequentupdatein SectionIV-D. visual update (i.e., the second step), (x
+(cid:98)
+,P(cid:98)) is the converged
+Moreover, to compensate for motion distortion, we conduct a state and covariance obtained from the LiDAR update.
+backward propagation as in [42], ensuring points in a LiDAR To obtain the measurement model distribution q(y | x),
+scan are “measured” at the scan-end time t . Note that for denote state estimated at the κ-th iteration as xκ, where
+k (cid:98)
+notation simplification, we omit the subscript k in all state x0 =x.Approximatingthemeasurementmodel(4)(eitherthe
+(cid:98) (cid:98)
+vectors. LiDAR or camera measurement) through its first-order Taylor
+expansion made at xκ leads to:
+D. Sequential Update (cid:98)
+The IMU propagated state x (cid:98) and covariance P(cid:98) impose a y|x≃h(x (cid:98) κ,0)+Hκδxκ+Lκv (9)
+priordistributionforx,thesystemstateattimet ,asfollows: (cid:124) (cid:123)(cid:122) (cid:125)
+k zκ
+x⊟x
+(cid:98)
+∼N(0,P(cid:98)) (3) q(y|x)≃N(h(x (cid:98) κ,0)+Hκδxκ,R) (10)
+
+===== PAGE 7 =====
+7
+where δxκ =x⊟xκ, zκ is the residual, Lκv ∼N(0,R) is touches the boundaries of the map, we move the map away
+(cid:98)
+the lumped measurement noise, Hκ and Lκ are the Jacobian from the boundaries by a distance d. As the map moves, the
+matrixes of h(xκ ⊞ δxκ,v) with respect to δxκ and v, memory containing the area moved out of the local map will
+(cid:98)
+evaluated at zero, respectively. be reset to store new areas moved in the local map. This
+Then, substituting the prior distribution q(x) and the mea- ring-buffer approach ensures that our local map is maintained
+surement distribution q(y|x) in (10) into the posterior dis- withinafixedsizeofmemory.Theimplementationofthering-
+tribution (8) and performing maximum likelihood estimation buffer Hash map is detailed in [46]. The map move check is
+(MLE), we can obtain the maximum a-posterior estimation performed after each ESIKF update step.
+(MAP) of δxκ (and hence xκ) from the standard update step
+Local voxel map d C Memory
+in the ESIKF framework [43]:
+p
+B 1
+(cid:16) (cid:17)−1 r
+K= (Hκ)TR−1Hκ+P(cid:98) −1 (Hκ)TR−1,
+x (cid:98) κ+1 =x (cid:98) κ⊞(−Kzκ−(I−KHκ)(x (cid:98) κ⊟x (cid:98) )) (11) L p r 0 p r 0 d B
+The converged state and covariance matrix then makes the
+mean and covariance of the posterior distribution q(x|y). A A C
+(a)Initial map (b)Move the map (c)Reset the memory
+Kalman filter with sequential update has been investigated
+in the literature, such as in [44, 45]. This paper adopts Fig. 4: 2D demonstration of local map slide. In (a), the grey
+this approach for ESIKF for LiDAR and camera systems. rectangleistheinitialmapregionwithlengthL.Theredcircle
+The implementation of the ESIKF with sequential update istheinitialdetectionareacenteredatp 0 .In(b),thedetection
+is detailed in Algorithm 1. In the first step (Line 6-10), area moves to a new position p 1 where the map boundaries
+the error state is updated from the LiDAR measurements aretouched.Themapregionismovedtoanewposition(blue
+(Section VI-A) iteratively until convergence. The converged rectangle) by distance d. In (c), the memory space B remains
+state and covariance estimates, denoted again as x
+(cid:98)
+and P(cid:98), are unchanged. The memory space A storing the green area is
+used to update the geometry of the map (Section V-B), and reset for the blue area C in (b).
+subsequently refined in the second step visual update (Line
+13 - 23) on each level of the image pyramid (Section VII-B) B. Geometry Construction and Update
+until convergence. The optimal state and covariance, denoted
+The geometry of the map is constructed and updated from
+as x¯ and P¯, are employed for propagating incoming IMU
+LiDAR point measurements. Specifically, after the LiDAR
+measurements (Section IV-C) and update the visual structures
+update in ESIKF (Section IV), we register all points from the
+of the map (Section V-D and V-E).
+LiDAR scan to the global frame. For each registered LiDAR
+point, we determine its located root voxel in the Hash map. If
+V. LOCALMAPPING
+the voxel does not exist, we initialize the voxel with the new
+A. Map Structure point and index it into the Hash map. If the determined voxel
+Our map employs an adaptive voxel structure presented in already exists in the map, we append the point to the existing
+[14], which is organized by a Hash table and an octree for voxel. After all points in a scan are distributed, we conduct
+eachHashentry(Fig.2).Thehashtablemanagesrootvoxels, geometry construction and update as follows.
+each with a fixed dimension of 0.5×0.5×0.5 meters. Each For newly-created voxels, we determine if all the contained
+root voxel encapsulates an octree structure to further organize points lie on a plane based on the singular value decomposi-
+leaf voxels of varying sizes. A leaf voxel represents a local tion. If so, we calculate the center point q=p¯, plane normal
+plane and stores a plane feature (i.e., plane center, normal n, and the covariance matrix of (q,n), denoted as Σ , of
+n,q
+vector,anduncertainty)alongwithasetofLiDARrawpoints the plane. Σ is used to characterize the plane uncertainty,
+n,q
+situated on this plane. Some of these points are attached with which arises from both pose estimation uncertainty and the
+three-level image patches (8×8 patch size), which we refer point measurement noise. The detailed plane criteria and
+toasvisualmappoints.Convergedvisualmappointsareonly calculation of the plane parameters and uncertainties can be
+attachedwithreferencepatches,whilenon-convergedonesare referred to our previous work [14]. If the contained points do
+attached with reference patches and other visible patches (see not lie on a plane, the voxel is continuously subdivided into
+Section V-E). The varying size of the leaf voxel allows it to eight smaller octants until either the points in the sub-voxel
+represent local planes of different scales, thus being adaptable are determined to form a plane or the maximum layer (eg., 3)
+to environments with different structure [14]. is reached. In the latter case, the points in the leaf voxel will
+To prevent the size of the map from going unbound, we bediscarded.Asaresult,themaponlycontainsvoxels(either
+keep only a local map within a large local region of length root or sub) identified as planes.
+L around the LiDAR’s current position, as illustrated in a 2D For existing voxels that have new points appended, we
+example in Fig. 4. Initially, the map is a cube centered at the assess if the new points still form a plane with the existing
+LiDAR’s starting position p . The LiDAR’s detection area is points in the root voxel or sub-voxel. If not, we conduct
+0
+visualized as a sphere centered at its current position, with voxel sub-division as above. If yes, we update the plane’s
+its radius defined by the LiDAR’s detection range. When the parameters (q,n) and covariance Σ as above too. Once
+n,q
+LiDAR moves to a new position p where the detection area the plane parameters converge (see [14]), the plane will be
+1
+
+===== PAGE 8 =====
+8
+considered as mature and new points on this plane will be atthe0-thpyramidlevel(thelevelwiththehighestresolution)
+discarded. Moreover, mature planes will have their estimated of both patch, with mean subtraction applied to both patches,
+plane parameters (q,n) and covariance Σ fixed. c denotes the cosine similarity between the normal vector
+n,q
+LiDAR points on planes (either in the root voxel or sub- n and view direction p/∥p∥ of patch f under evaluation.
+voxel) will be used for generating visual map points in the When the patch is directly facing the plane where the map
+subsequentsection.Formatureplanes,50mostrecentLiDAR point is located, the value of c is 1. The overall score S is
+points are candidates for visual map point generation, while calculated by summing the weighted NCC and c, where the
+forunmatureplanes,allLiDARpointsarethecandidates.The former represents the average similarity between the patch f
+visualmappointgenerationprocesswillidentifysomeofthese underevaluationandallotherpatchesg andtr(Σ )represents
+i n
+candidate points as visual map points and attach them with the trace of the covariance matrix of the normal vector.
+image patches for image alignment. Among all the patches attached to a visual map point,
+the one with the highest score is updated as the reference
+patch.Theabovescoringmechanismtendstochoosereference
+C. Visual Map Point Generation and Update
+patches whose (1) appearance is similar (in terms of NCC) to
+To generate and update visual map points, we select the most of the rest of the patches, a technique used by MVS
+candidate LiDAR points in the map that (1) are visible [47] to avoid patches on dynamic objects; (2) view direction
+from the current frame (detailed in Section VII-A), and (2) is orthogonal to the plane, thereby maintaining texture details
+exhibit significant gray-level gradients in the current image. at a high resolution. In contrast, the reference patches update
+We project these candidate points, after the visual update strategyinourpreviousworkFAST-LIVO[8]andpriorarts[4]
+(SectionIV-D),ontothecurrentimageandretainthecandidate directly select the patch with the smallest view direction dif-
+pointwiththesmallestdepthforthelocalplaneineachvoxel. ference from the current frame, causing the selected reference
+Then,wedividethecurrentimageintouniformgridcellseach patch to be very close to the current frame, hence imposing
+with 30×30 pixels. If a grid cell does not contain any visual weak constraints on the current pose update.
+mappointprojectedhere,wegenerateanewvisualmappoint
+using the candidate point with the highest gray-level gradient
+andassociateitwiththecurrentimagepatch,estimatedcurrent
+state(i.e.,frameposeandexposuretime),andtheplanenormal
+calculated from the LiDAR points as in the previous section.
+Thepatchattachedtothevisualmappointshasthreelayersof
+thesamesize(e.g.,11×11pixels),eachlayerishalfsampled
+from the previous layer, forming a patch pyramid. If a grid
+cell contains visual map points projected here, we add new
+patch (all three layers of pyramid) to the existing visual map
+Fig.5:(a)Affinewarpingbetweenreferencepatchesandtarget
+point if (1) more than 20 frames have passed since its last patches. (b) Any normal Irn ∈ S2 lying on the normalized
+patch addition, or (2) its pixel position in the current frame sphere is first projected into a point M ∈ R3 on the plane
+deviates by more than 40 pixels from its position at the last Irp T M = 1, and then projected to a point m ∈ R2 on the
+patch addition. As a result, the map points will likely have
+x-y plane. This transformation thereby converts a perturbation
+effective patches with uniformly distributed viewing angles.
+δn on the sphere into a perturbation δm in x-y plane.
+Along with the patch pyramid, we also attach the estimated
+current state (i.e.,pose and exposure time to the map point. E. Normal Refine
+Each visual map point is assumed to lie on a small local
+D. Reference Patch Update plane. Existing works [2, 4, 8] assumed that all pixels in a
+patch have the same depth, a wild assumption that does not
+A visual map point could have more than one patch due to
+hold in general. We use plane parameters computed from the
+the addition of new patches. We need to choose one reference
+LiDAR points as detailed in Section V-B to achieve greater
+patch for image alignment in the visual update. In detail,
+accuracy. This plane normal is crucial for performing affine
+we score each patch f based on photometric similarity and
+warping for image alignment in the visual update process. To
+viewing angle as follows:
+further enhance the accuracy of the affine warping, the plane
+(cid:80) [f(x,y)−¯f][g(x,y)−g¯]
+normal could be further refined from the patches attached to
+NCC(f,g)= x,y
+(cid:113) (cid:80) [f(x,y)−¯f]2(cid:80) [g(x,y)−g¯]2 the visual map point. Specifically, we refine the plane normal
+x,y x,y in the reference patch by minimizing the photometric error
+n·p 1 with respect to the other patches attached to the visual map
+c= , ω = (12)
+∥p∥ 1 1+etr(Σn) point.
+1 (cid:88) n 1) Affine warping: Affine warping is used to transform
+S =(1−ω 1 )· n NCC(f,g i )+ω 1 ·c patch pixels from the reference frame (i.e., the source patch)
+i=1 to patch pixels in the rest of the frames (i.e., the target patch),
+whereNCC(f,g)representstheNormalizedCross-Correlation illustrated in Fig. 5(a). Let uj be the j-th pixel coordinates
+r
+(NCC) used to measure the similarity between patch f and g in the source patch and uj be the j-th pixel coordinates in
+i
+
+===== PAGE 9 =====
+9
+the i-th target patch. Assuming all pixels in the patch lie in Once the plane normal converges, the reference patch and
+a local plane with normal Irn and visual map point position normal vector for this visual map point are fixed without
+Irp(whichcorrespondstothecenterpixelforbothsourceand further refinement, and all other patches are deleted.
+targetpatches),bothrepresentedinthesourcepatchframe,we
+have:
+VI. LIDARMEASUREMENTMODEL
+uj =Aiuj
+i r r This section details the LiDAR measurement model y l =
+Ai =P(IiR +Iit 1 IrnT)P−1 (13) h l (x,v l )usedintheLiDARupdateofESIKFinSectionIV-D.
+r Ir IrIrnT ·Irp
+whereAi r representstheaffinewarpingmatrixthattransforms A. Point-to-plane LiDAR Measurement Model
+the pixel coordinates from the source (or reference) patch
+After obtaining the undistorted points {Lp } in a scan, we
+to the i-th target patch, IiR and Iit denote the relative j
+Ir Ir project them to the global frame using the estimated state xκ
+pose of the reference frame I w.r.t. the target frame I . (cid:98)
+r i at the κ-th iteration of LiDAR update:
+To use fisheye images directly without rectifying them to
+pinhole images, we implement projection matrix P and back Gp
+(cid:98)
+κ
+j
+=GT(cid:98) κ
+I
+IT
+L
+Lp
+j
+(17)
+projectionmatrixP−1 basedondifferentcameramodels(e.g.,
+We then identify the root or sub voxel where Gpκ lies in the
+Pisthecameraintrinsicmatrixforthepinholecameramodel). (cid:98)j
+Hash map. If no voxel is found or the voxel does not contain
+2) Normal Optimization: To refine the plane normal Irn,
+aplane,thepointisdiscarded.Otherwise,weusetheplanein
+we minimize photometric errors between the reference patch
+the voxel to establish a measurement equation for the LiDAR
+and other image patches at the 0-th pyramid level (i.e., the point. Specifically, we assume the true LiDAR point Lpgt,
+highest-resolution level): j
+given the accurate LiDAR pose GT , should lie on the plane
+I
+N2 with normal ngt and center point qgt in the voxel. i.e.,
+Irn∗ =arg Ir m n∈ in S2 (cid:88)(cid:88)(cid:13) (cid:13)τ i I i (Ai r uj r )−τ r I r (uj r ) (cid:13) (cid:13) 2 (14) 0 j =(ngt)T(GT IT L j pgt−qgt) (18)
+i∈Sj=1 j I L j j
+where N is the path size, τ r and τ i are the inverse exposure Since the ground-true point Lpg j t is measured as Lp j with
+times of the reference frame and the i-th target frame, respec- ranging and bearing noises δLp , we have Lpgt = Lp −
+tively. I r (uj r ) denote j-th patch pixel in the reference frame, δLp .Likewise,theplaneparame j ters(ngt,qgt)a j reestima j ted
+I (Aiuj) denotes the j-th path pixel in the i-th target frame, j j j
+i r r as (n ,q ) with covariance Σ (Section V-B), so we have:
+j j n,q
+and S is the set of all target frames. ngt =n ⊟δn , qgt =q −δq . Therefore,
+j j j j j j
+3) Optimization Variable Transformation: To enhance the
+computational efficiency, we reparameterize the least squares 0 =(n j ⊟δn j )T(GT I IT L (Lp j −δLp j )−(q j −δq j ))
+problem in (14). Note that th 1 e optimization variable Irn (cid:124)(cid:123) y (cid:122) l (cid:125) (cid:124) hl( (cid:123) x (cid:122) ,vl) (cid:125)
+only appeared in M ≜ Irn ∈ R3 in (13), the (19)
+IrnT ·Irp
+optimization over Irn can be conducted over M. Moreover, where the measurement noise v
+l
+=(δLp
+j
+,δn
+j
+,δq
+j
+) consist-
+the vector M is subject to constraint Irp·M = 1, meaning ing of the noise associated with the LiDAR point, the normal
+that M can be parameterized as follows: vector, and the plane center respectively.
+ 
+M
+x
+M=   M y  =Bm+b B. LiDAR Measurement Noise with Beam Divergence
+ Ir 1 p z − I I r r p p x z M x − I I r r p p y z M y  LiD T A he R u f n ra c m er e tai i n s ty dec o o f m a po L se iD d A in R to p t o w in o t c δ om Lp p j one in nts th i e n l [ o 1 c 4 a ] l ,
+ 1 0   0  the ranging uncertainty δd caused by laser time of flight
+(cid:20) (cid:21)
+B=    − I 0 rp x − I 1 rp y    ,b=  0 1   ,m= M M x y ∈R2 f ( r T o O m F) e , n a c n o d der th s. e B b e e s a i r d i e n s g th d e ir s e e ct u io n n cer u t n a c in e t r i t e a s in , t w y e δ a ω lso or c i o g n in s a id te e d r
+Irp
+z
+Irp
+z
+Irp
+z
+uncertainties caused by the laser beam divergence angle θ,
+(15) as illustrated in Fig. 6. As the angle φ between the bearing
+whereIrp z ̸=0sincenosuchreferencepatchcouldbechosen direction and normal vector increases, the ranging uncertainty
+for the visual map point. The relation among Irn, M, and m of the LiDAR point increases significantly, while the bearing
+are shown in Fig. 5 (b). direction uncertainty remains unaffected. The δd due to the
+Finally,theoptimizationin(14)isconductedoverthevector laser beam divergence angle can be modeled as:
+m ∈ R2 without any constraints. This optimization can be (cid:18) (cid:19)
+cosφ cosφ
+performed in a separate thread to avoid blocking the main δd=L −L =d − (20)
+2 1 cos(θ+φ) cos(θ−φ)
+odometry thread. The optimized parameter m∗ can then be
+used to recover the optimal normal vector Irn∗: ConsideringδdinfluencedbyTOFandlaserbeamdivergence,
+whenoursystemselectsmorepointsfromthegroundorwalls
+M∗ (see Fig. 6 (c, d)), it achieves a more precise pose estimation
+Irn∗ =
+∥M∗∥
+,M∗ =Bm∗+b (16)
+than that not considering such effect.
+
+===== PAGE 10 =====
+10
+(a) (b)
+Camera
+Surface
+Visual map points
+Current LiDAR scan points
+Occluded visual map points
+Depth discontinuous visual
+map points
+Fig. 8: Outlier rejection. (a) shows the diagrammatic drawing
+of occluded and depth-discontinuous visual map points. (b)
+shows the effect of outlier rejection in real scenes. The red
+dots are the rejected visual map points, and the green dots are
+the accepted visual map points.
+Fig. 6: (a) and (b) respectively illustrate the 3D and side
+voxels hit by LiDAR points in the current scan. This can
+cross-sectional views of the LiDAR point uncertainty model
+be done efficiently by inquiring the voxel Hash table using
+consideringthelaserbeamdivergenceangleθ.Theredcontour
+the measured point position. If the camera FoV is largely
+outlinestheareathatalaserbeamspreads.(c)and(d)colorthe
+overlapped with the LiDAR FoV, map points in the camera
+points in a scan by the point location uncertainty. Compared
+FoV likely lie in these voxels as well. We also poll voxels
+to (c), (d) further takes into account the ranging uncertainty
+hit by map points identified visible (through the same voxel
+δd resulting from the beam divergence angle. This leads to a
+query and raycasting) in the previous image frame, assuming
+higher uncertainty for ground points due to the large spread
+that two consecutive image frames have large FoV overlaps.
+area of laser beams.
+Finally, the current visual submap can be obtained as map
+Sampled points points contained in these two types of voxels followed by a
+Sampled pixels FoV check.
+Occupied image grids 2) Raycasting on Demand: In most cases, the visual
+Voxel with visual map points submap can be obtained through the voxel queries above.
+Voxel with LiDARpoints However, a LiDAR sensor could return no points when it is
+but without visual points
+too close to an object (known as the close proximity blind
+Unselected Voxel
+zones). Also, the camera FoV may not be completely covered
+by the LiDAR FoV. To recall more visual map points in these
+cases, we employ a raycasting strategy as illustrated in Fig.
+7. We divide the image into uniform grid cells, each with
+Z
+Y 30 × 30 pixels, and project the visual map points obtained
+from the voxel query onto the grid cells. For each image grid
+X dmin dmax cell that is not occupied by these visual map points, a ray is
+World Frame
+cast backward along the central pixel, where sample points
+Fig. 7: The illustration of on-demand voxel raycasting.
+are uniformly distributed along the ray in the depth direction
+from d to d . In order to reduce computation load, the
+min max
+VII. VISUALMEASUREMENTMODEL positions of sample points on each ray in the camera body
+frame are pre-computed. For each sampled point, we evaluate
+This section details the visual measurement model y =
+c
+the corresponding voxel’s status: if the voxel contains map
+h (x,v )usedinthevisualupdateofESIKFinSectionIV-D.
+c c
+points that lie in this grid cell after projection, we incorporate
+thesemappointsintothevisualsubmapandceaseforthisray.
+A. Visual Map Point Selection Otherwise, we continue to the next sample point on the ray
+To perform sparse image alignment in the visual update, until reaching the maximum depth d max . After processing all
+we begin by selecting appropriate visual map points. We theunoccupiedimagegridcellsthroughraycasting,weobtain
+first extract the set of map points (termed as visual submap) a set of visual map points that distribute among the whole
+that is visible in the current camera FoV, using voxel and image.
+raycasting queries. Then, the visual map points from this 3) Outlier Rejection: After voxel query and raycasting,
+submap are selected and outliers are rejected. This process we obtain all visual map points in the current frame FoV.
+yieldsarefinedsetofvisualmappointsreadyforconstructing However, these visual map points could be occluded in the
+visual photometric errors in the visual measurement model. current frame, have discontinuous depth, have their reference
+1) Visible Voxel Query: Identifying map voxels within the patch taken at large view angles, or have large view angles
+current frame FoV is challenging due to the large number in the current frame, all of which can severely degrade image
+of voxels in the map. To address this issue, we poll the alignment accuracy. To address the first issue, we project all
+
+===== PAGE 11 =====
+11
+the visual map points in the submap into the current frame time τ = 1 to eliminate the degeneration of equation (22)
+0
+using the pose after the LiDAR update and keep the lowest- when all inverse exposure time are zeros. The estimated
+depth points in each grid cell of 30×30 pixels. To address inverse exposure times of subsequent frames are therefore the
+the second issue, we project the LiDAR points in the current exposure time relative to the first frame.
+LiDAR scan to the current frame producing a depth map. By The equation (22) is used in the visual update step across
+comparing the depth of visual map points with their 9×9 three levels (see Algorithm 1); the visual update starts from
+neighbor in the depth map, we determine their occlusion and the coarsest level, after the convergence of a level, it proceeds
+depthvariation.Occludedanddepth-discontinuousmappoints to the next finer level. The estimated state is then used to
+arerejected(seeFig.8).Toaddressthethirdandfourthissue, generatevisualmappoints(SectionV-C)andupdatereference
+weremovepointswheretheviewangle(i.e.,theanglebetween patch (Section V-D).
+normal vector and direction from the visual map point to the
+patch optical center) of the reference patch or current patch
+VIII. DATASETSFOREVALUATION
+is too large (e.g. over 80°). The remaining visual map points
+In this section, we introduce datasets for performance eval-
+will be used to align the current image.
+uation, including public datasets NTU-VIRAL [49], Hilti’22
+B. Sparse-Direct Visual Measurement Model [50],Hilti’23[51],andMARS-LVIG[52],aswellasourself-
+The visual map points {Gp } extracted above are used collected FAST-LIVO2 private dataset. Specifically, the NTU-
+i
+VIRAL and Hilti datasets are used to conduct a quantitative
+to construct the visual measurement model. The underlying
+principle is that, when transforming the map point Gp to benchmark comparison of our system against other state-of-
+i the-art (SOTA) SLAM systems (Section IX-B). The FAST-
+the current image I (·) with the ground-truth state (i.e., pose)
+k
+LIVO2privatedatasetisprimarilyusedtoevaluateoursystem
+x , the photometric error between the reference patch and the
+k
+acrossvariousextremelychallengingscenarios(SectionIX-C),
+current patch should be zero:
+todemonstrateitscapabilityforhigh-precisionmapping(Sec-
+0=τ k Ig k t(π(CT I (GT I )−1Gp i )+∆u) tion IX-D), and to validate the functionality of the individual
+(cid:124) (cid:123)(cid:122) (cid:125)
+modules within our system (Sections I-A through I-D in the
+ui
+(21)
+−τ Igt(π(CrT Gp )+Ar∆u) Supplementary Material [53]). MARS-LVIG dataset is em-
+r r G i i
+(cid:124) (cid:123)(cid:122) (cid:125) ployedforapplicationdemonstrations(SectionX)andablation
+u′
+i study (Section I-E in the Supplementary Material [53]).
+where π(·) is the common camera projection model (i.e.,
+Pinhole, MEI, ATAN, Scaramuzza, Equidistant), CrT is the
+G A. NTU-VIRAL, Hilti and MARS-LVIG Dataset
+pose of the global frame G w.r.t. reference frame C , which
+r
+has been estimated when receiving and fusing the reference TheNTU-VIRALdataset,collectedattheNanyangTechno-
+frame, Ar is the affine warping matrix that transforms pixels logical University campus using an aerial platform, presents
+i
+from the i-th current patch to the reference patch, ∆u is diverse scenarios embodying unique aerial operational chal-
+the relative pixel position to the center u within the current lenges. Specifically, the “sbs” sequences can only provide
+i
+patch, Igt,Igt denote the ground-true pixel values of the noisyvisualfeaturesfromdistantobjects.The“nya”sequences
+k r
+reference and current frames, respectively. They are measured present challenges to LiDAR SLAM due to semi-transparent
+astheactualimagepixelvaluesI ,I withmeasurementnoise surfacesandtovisualSLAMowingtointricateflightdynamics
+k r
+v =(δI ,δI ), which originate from various sources (e.g., and low lighting conditions. The dataset is equipped with a
+c k r
+shot noise and the Analog-to-Digital Converter (ADC) noise 16-channel OS1 gen13 LiDAR sampled at 10 Hz and with a
+of the camera CMOS). Hence, built-inIMUat100Hz,andtwosynchronizedpinholecameras
+triggered at 10 Hz. The left camera is used for evaluation.
+0 =τ (I (u +∆u)−δI )−τ (I (u′+Ar∆u)−δI )
+k k i k r r i i r The Hilti’22 and Hilti’23 datasets, collected by handheld
+(cid:124)(cid:123)(cid:122)(cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+yc hc(x,vc) and robot devices, encompass indoor and outdoor sequences
+(22) from environments like construction sites, offices, labs and
+To enhance computational efficiency, we employ an inverse parkingareas.Thesesequencesintroducenumerouschallenges
+compositionalformulation[4,48],wheretheposeincremental from long corridors, basements, and stairs, with textureless
+δT ∈ R6 parameterizing GT
+I
+=GT(cid:98) κ
+I
+Exp(δT) in u
+i
+(see features, varying illumination conditions, and insufficient Li-
+(21)), is moved from u to u′ as follows: DAR plane constraints. Handheld sequences use a Hesai
+i i PandarXT-324 LiDARat10Hz,fivewide-anglecamerasat40
+u
+i
+=π(CT
+I
+(GT(cid:98) κ
+I
+)−1Gp
+i
+)
+(23) Hz, which is downsampled into 10 Hz, and an external Bosch
+u′ =π(CrT Exp(δT)Gp ) BMI085 IMU at 400 Hz. Meanwhile, the robot-mounted
+i G i
+sequencesfeatureaRobosenseBPearl5 LiDARat10Hz,eight
+Giventhatu′ inthereferenceframeremainsunchangedduring
+i omnidirectional cameras at 10 Hz, and an Xsens MTi-670
+each iteration, we only require a one-time computation of the
+IMUat200Hz.Inbothcases,thefront-facingcameraisused
+Jacobian matrices w.r.t. δT, rather than re-calculating them
+for every iteration.
+3https://ouster.com/products/os1-lidar-sensor
+To estimate the inverse exposure time τ k from the mea- 4https://www.hesaitech.com/product/xt32/
+surement equation (22), we fix the initial inverse exposure 5https://www.robosense.ai/en/rslidar/RS-Bpearl
+
+===== PAGE 12 =====
+12
+for all systems under evaluation. Millimeter-accurate ground buildings, corridors, basements, mining tunnel, etc.) charac-
+truth,obtainedthroughamotioncapturesystem(MoCap)ora terized by structure-less, cluttered, dim, variable-lighting, and
+TotalStation[54],isprovidedforeachsequence.Notethatthe weakly textured environments, with a total duration of 66.9
+groundtruthoftheHiltidatasetsisnotopen-source;therefore, min. Most sequences exhibit visual and/or LiDAR degenera-
+algorithmicresultsonthesedatasetsareevaluatedviatheHilti tion, such as facing a single and/or texture-less plane, travers-
+official website. Since “Site 3” in Hilti’23 does not provide ing an extremely narrow and/or dark tunnel, and experiencing
+in-depth analysis plots (e.g., RMSE), we exclude these four varying light conditions from indoor to outdoor (see Fig. S7
+sequences,butourscoringresultsforthesesequencescanstill in the Supplementary Material [53]). To guarantee enhanced
+be found on their official website6. NTU-VIRAL and Hilti synchronous data collection between the camera and LiDAR,
+contribute a total of 25 sequences. we configure the camera with fixed exposure time but auto-
+The MARS-LVIG dataset provides high-altitude, ground- gainmodeinmostscenarios.Fortheremainingsequenceswith
+facing mapping data that encompasses diverse unstructured auto-exposure,werecordtheirgroundtruthexposuretimes.In
+terrains such as jungles, mountains, and islands. The dataset allsequences,theplatformreturnstothestartingpoint,which
+was collected via a DJI M300 RTK quadrotor, which is enables the drift evaluation.
+equipped with a Livox Avia7 LiDAR (with built-in BMI088
+IMU) and a high-resolution global-shutter camera, both trig-
+IX. EXPERIMENTRESULTS
+gered at 10 Hz. This is notably distinct from the aforemen-
+Inthissection,weconductextensiveexperimentstoevaluate
+tioned NTU-VIRAL and Hilti datasets, which use 752×480
+our proposed system.
+grayscale images, while the MARS dataset employs 2448×
+2048 RGB images, thereby facilitating the generation of
+clear, dense colored point clouds. Therefore, we leverage this A. Implementation and System Configurations
+publicdatasettovalidateourcapabilitiesinhigh-altitudeaerial
+We implemented the proposed FAST-LIVO2 system in
+mapping applications.
+C++ and Robots Operating System (ROS). In the default
+(a) Camera (b) Livox Avia configuration, the exposure time estimation is enabled, while
+STM32 1 Hz
+LiDAR normalvectorrefinementisturnedoff.LiDARpointsinascan
+Sychn Pulse signal 1
+aredownsampledtemporallyata1:3ratio.Therootvoxelsize
+Timers 10 Hz Camera for the voxel map is set at 0.5 m, and the maximum layer of
+Pulse signal 2
+Synthetic USB the internal octree is 3. The image patch size is 8 × 8 for
+On-board GPRMC Serial
+image alignment and 11×11 for normal refinement. Within
+PC
+Build-in IMU the sequential ESIKF settings, for all the experiments, the
+10 Hz Point Cloud
+Battery STM32 camera photometric noise is set to a constant value of 100.
+On-board PC and RGB image
+The LiDAR depth error and bearing angle error are adjusted
+Fig. 9: Our platform with hardware synchronization for data to 0.02 m and 0.05° for Livox Avia LiDAR and OS1-16,
+acquisition. (a) our handheld platform, (b) the hardware syn- 0.001 m and 0.001° for PandarXT-32, 0.008 m and 0.01° for
+chronization scheme. Robosense BPearl LiDAR. The laser beam divergence angle
+is set at 0.15° for Livox Avia LiDAR and OS1-16, and at
+B. FAST-LIVO2 Private Dataset 0.001° for the PandarXT-32 and Robosense BPearl LiDAR.
+To validate the system’s performance under more extreme Our system uses the same parameters in all sequences of all
+conditions (e.g., LiDAR degeneration, low illumination, dras- datasetswiththesamesensorsetup.Thecomputationplatform
+tic exposure changes, and cases of no LiDAR measurements), for all experiments is a desktop PC equipped with an Intel i7-
+we make a new dataset named FAST-LIVO2 private dataset. 10700KCPUand32GBRAM.ForFAST-LIVO2,wealsotest
+The dataset, hardware device, and hardware synchronization it on an ARM processor that is commonly used in embedded
+scheme are released with the codes of this work to facilitate systems with reduced power and cost. The ARM platform is
+the reproduction of our work. RB58. with a Qualcomm Kryo585 CPU and 8 GB RAM. We
+1) Platform: Our data collection platform, illustrated in refer to the implementation of FAST-LIVO2 on the ARM-
+Fig. 9, is equipped with an industrial camera (MV-CA013- based platform as “FAST-LIVO2 (ARM)”.
+21UC),aLivoxAviaLiDAR,andaDJImanifold-2c(Inteli7-
+8550uCPUand8GBRAM)asonboardcomputers.Thecam-
+B. Benchmark Experiments
+eraFoVis70.6◦×68.5◦ andtheLiDARFoVis70.4◦×77.2◦.
+In this experiment, we conduct quantitative evaluations on
+Allsensorsarehardsynchronizedwitha10Hztriggersignal,
+25 sequences from the NTU-VIRAL, Hilti’22, and 23 open
+generated by STM32 synchronized timers.
+datasets. Our approach is benchmarked against several state-
+2) Sequence Description: As summarized in Table S1 in
+of-the-art open-source odometry systems, including R3LIVE
+theSupplementaryMaterial[53],FAST-LIVO2privatedataset
+[36], a dense direct LiDAR-inertial-visual odometry system;
+comprises 20 sequences across various scenes (e.g., campus
+FAST-LIO2 [13], a direct LiDAR-inertial odometry system;
+6https://hilti-challenge.com/leader-board-2022.html, https://hilti-challenge.
+com/leader-board-2023.html 8https://www.adlinktech.com/Products/Computer on Modules/SMARC/
+7https://www.livoxtech.com/avia LEC-RB5?lang=en
+
+===== PAGE 13 =====
+13
+TABLE II: Absolute translational errors (RMSE, meters) in sequences
+SDV- Our FAST- LVI- FAST- Ours Ours Ours
+Dataset Sequence R3LIVE Ours
+LOAM LIO LIO2 SAM LIVO (w/oexpo) (wnormal) (w/oupdate)
+ConstructionGround 25.121 0.011 0.013 0.021 × 0.022 0.011 0.008 0.015 0.010
+ConstructionMultilevel 12.561 0.031 0.044 0.024 × 0.052 0.021 0.018 0.025 0.020
+ConstructionStairs 9.212 0.221 0.320 0.784 9.142 0.241 0.049 0.027 0.151 0.016
+LongCorridor 19.531 0.061 0.064 0.061 6.312 0.065 0.069 0.059 0.071 0.067
+Hilti’22
+Cupola 9.321 0.221 0.250 2.142 × 0.182 0.161 0.122 0.179 0.121
+LowerGallery 11.232 0.014 0.024 0.008 2.281 0.022 0.010 0.008 0.010 0.007
+AttictoUpperGallery 4.551 0.223 0.720 2.412 × 0.621 0.101 0.077 0.221 0.069
+OutsideBuilding 2.622 0.030 0.028 0.029 0.952 0.052 0.042 0.033 0.050 0.035
+Floor0 4.621 0.028 0.031 0.018 × 0.021 0.025 0.023 0.023 0.022
+Floor1 7.951 0.025 0.031 0.024 8.682 0.022 0.024 0.022 0.031 0.023
+Floor2 7.912 0.041 0.083 0.046 × 0.048 0.023 0.021 0.051 0.022
+Basement 6.151 0.021 0.038 0.024 × 0.035 0.020 0.018 0.018 0.016
+Hilti’23
+Stairs 9.032 0.110 0.170 0.110 3.584 0.152 0.025 0.020 0.132 0.018
+Parking3xfloorsdown 19.952 0.162 0.320 0.462 × 0.356 0.035 0.022 0.112 0.032
+Largeroom 16.781 0.121 0.028 0.035 0.563 0.031 0.033 0.027 0.118 0.026
+Largeroom(dark) 15.012 0.051 0.040 0.059 × 0.053 0.049 0.051 0.058 0.046
+eee 01 0.301 0.122 0.212 0.072 3.901 0.191 0.069 0.066 0.109 0.068
+eee 02 1.842 0.131 0.172 0.059 0.182 0.132 0.051 0.055 0.112 0.051
+eee 03 0.301 0.124 0.213 0.078 0.287 0.192 0.068 0.070 0.099 0.068
+nya 01 0.202 0.084 0.141 0.080 0.205 0.121 0.075 0.078 0.106 0.073
+NTUVIRAL
+nya 02 0.214 0.153 0.212 0.084 1.296 0.182 0.076 0.081 0.118 0.075
+nya 03 0.251 0.082 0.133 0.079 0.176 0.112 0.060 0.060 0.092 0.059
+sbs 01 0.212 0.112 0.184 0.075 0.254 0.253 0.064 0.063 0.098 0.062
+sbs 02 0.233 0.123 0.161 0.076 0.221 0.134 0.062 0.048 0.116 0.061
+sbs 03 0.281 0.122 0.142 0.070 0.309 0.132 0.061 0.047 0.119 0.060
+Average 7.416 0.097 0.151 0.278 1.928 0.137 0.051 0.044 0.089 0.045
+×denotesthesystemtotallyfailed.
+SDV-LOAM [40], a semi-direct LiDAR-visual odometry sys- The results of all methods are shown in Table II. It is seen
+tem; LVI-SAM [35], a feature-based LiDAR-inertial-visual that our method achieves the highest overall accuracy across
+SLAM system; and our previous work FAST-LIVO [8]. all sequences with an average RMSE of 0.044 m, which is
+ThesesystemsaredownloadedfromtheirrespectiveGitHub three times more accurate than the second-place FAST-LIVO
+repositories.ForFAST-LIO2,FAST-LIVO,andLVI-SAM,we at 0.137 m. Our system delivers the best results in most
+use the recommended settings for indoor and outdoor scenes sequences, except for ”Outside Building” and ”Large Room
+equipped with multi-line LiDAR sensors. For R3LIVE, we (dark)”,whereoursystemexhibitsaslightly(millimeter-level)
+adapt the system to work with fisheye camera models and higher error compared to the LiDAR-inertial only odometry
+multi-line LiDARs equipped with external IMUs (the default FAST-LIO2. This discrepancy can be attributed to the rich
+configuration only supports internal IMUs). We disable the structural features but poor lighting conditions of these se-
+real-timeoptimizationofthecameraintrinsicandtheextrinsic quences, resulting in dim and blurred images. Consequently,
+CT due to adverse optimization caused by insufficient IMU fusing these low-quality images does not enhance odome-
+I
+excitation in the datasets. Other parameters, including the try accuracy. Excluding these two sequences, our method,
+window size and pyramid level for optical flow tracking, the which leverages tightly-coupled LiDAR, inertial, and visual
+resolution for downsampling the point cloud of the current information, outperforms FAST-LIO2, our LIO subsystem,
+scan and the global map, are fine-tuned to achieve optimal and the LiDAR-visual only odometry, SDV-LOAM, signifi-
+performance. Since only the vision module of SDV-LOAM cantly. Notably, SDV-LOAM performs particularly poorly on
+is open-sourced, we integrate it with LeGO-LOAM [7] in a the Hilti datasets due to its lack of tight integration with
+looselycoupledmanner,followingthemethodologydescribed IMU measurements, leading to drift in the LO subsystem.
+in the original paper [40]. This enhanced system continues Additionally, the loose coupling between LiDAR and visual
+to refine poses obtained from the vision module and we also observations, along with poor initial values for VO, often
+openthisimplementationonGitHub9.Giventhatallcompared results in local optima or even negative optimization. Our
+systems are odometry without loop closure, except for LVI- LIO subsystem generally surpasses FAST-LIO2 due to our
+SAM, we remove the loop-closure module of LVI-SAM to more accurate noise modeling for each LiDAR point. In a
+ensureafaircomparison.Additionally,weconductanablation few sequences where FAST-LIO2 outperforms slightly, the
+study on the exposure time estimation module, the normal differencesareminimal,atthemillimeterlevel,andnegligible.
+refine module, and the reference patch update strategy. The Moreover, our system’s accuracy significantly exceeds that of
+default FAST-LIVO2 has real-time exposure estimation and other tightly coupled LiDAR-inertial-visual systems across all
+reference patch update, but no normal refinement. sequences. Among them, LVI-SAM fails in nine sequences
+primarily due to its feature-based LIO and VIO subsystems
+9https://github.com/xuankuzcr/SDV-LOAM reimplementation
+
+===== PAGE 14 =====
+14
+not fully utilizing raw measurements, which degrades its in Fig. 10 and 11. Fig. 10 showcases LiDAR degeneration
+robustness in environments with subtle geometric or texture sequenceswheretheLiDARisfacingabigwallwhilemoving
+features. R3LIVE generally performs well, but struggles in along the wall from one side to the other. Due to the absence
+“ConstructionStairs”,“Cupola”,and“AttictoUpperGallery” of geometrical constraints since only one wall plane is being
+sequences, where its performance is even worse than FAST- observed by the LiDAR, LIO methods would fail. It’s worth
+LIO2. This is because intense rotations at structure-less stair- mentioningthatthe“HITGraffitiWall”sequencespansnearly
+cases result in inadequate pose priors, causing local optima 800 meters with LiDAR continuously facing the wall, leading
+when aligning colored map points with the current frame, and to considerable degeneration. In all sequences, FAST-LIVO2
+ultimately leading to negative optimization. FAST-LIVO and distinctly showcases its robustness against even long-term
+FAST-LIVO2 overcome such challenges in these sequences degeneration and its capability to deliver high-precision col-
+by the patch-based image alignments. Additionally, situations ored point maps. In contrast, FAST-LIVO managed to obtain
+where the sensors are close to walls in these sequences high- the geometric structure but with completely blurred texture.
+light the effectiveness of raycasting in FAST-LIVO2, with the R3LIVE struggles with both geometric structure and texture
+mapping results in these large-scale scenes shown in Fig. S8 clarity. Fig.11showcasestestsinmorecomplicatedscenarios
+intheSupplementaryMaterial[53].Ontheotherhand,FAST- where LiDAR and/or camera both degenerate occasionally.
+LIVO is outperformed by R3LIVE and FAST-LIVO2 on the Thedegenerationdirectionsareindicatedbyrespectivearrows.
+NTU-VIRAL dataset, especially in unstructured scenes like “HKU Cultural Center” (Fig. 11 (a)) showcases the mapping
+“nya” sequences, where the effects of affine warping based results of FAST-LIVO2, R3LIVE, and FAST-LIVO. As can
+on constant depth assumptions are inaccurate. In contrast, be seen, R3LIVE and FAST-LIVO have distorted point maps,
+the pixel-level alignment of R3LIVE and the plane prior (or blurred textures, and drifts exceeding 1 m. In contrast, FAST-
+refinement) of FAST-LIVO2 do not encounter such issues. LIVO2 successfully returns to the starting point, achieving an
+Comparing the different variants of FAST-LIVO2, we ob- impressiveend-to-enderroroflessthan0.01m,whileachiev-
+serve that the average accuracy without real-time exposure ingaconsistentpointmapwithcleartextures.“CBDBuilding
+time estimation decreases by 6 mm compared to the default, 03” (Fig. 11 (b)) and “Mining Tunnel” (Fig. 11 (c)) display
+as the exposure time estimation can actively compensate onlyFAST-LIVO2results,asR3LIVEandFAST-LIVOfailed.
+illumination changes in the environment. On the other hand, In Fig. 11 (b), the blue arrow represents movement towards a
+the average accuracy without the reference patch update de- pure black screen, indicating concurrent LiDAR and camera
+creases by 44 mm compared to the default, as the reference degeneration.InFig.11(c1)and(c2),theredpointsrepresent
+patch update strategy effectively selects patches with higher the LiDAR scan at that location, illustrating the areas of
+resolution and avoids selecting outlier patches. Finally, the LiDAR degeneration due to the single plane being observed.
+normal refinement increases the average accuracy by 1 mm, Furthermore, the “Mining Tunnel” exhibits very dim lighting
+and the accuracy improvement is not consistent in all se- throughout the whole sequence, coupled with frequent visual
+quences. The limited improvement is mainly because normal and LiDAR degeneration. Despite of these challenges, FAST-
+vector refinement yields positive optimization only in simple LIVO2 still returns to the starting point with an end-to-end
+structured scenes with nice image observations. In the NTU- error of less than 0.01 m in both sequences.
+VIRAL dataset, images from the “eee” and “nya” sequences
+are extremely dim and blurry, where negative optimization
+D. High-precision Mapping
+is particularly severe. To further study the effectiveness of
+the different modules, including exposure time estimation, In this experiment, we validate the high-precision map-
+affine warping, reference patch update, normal convergence, ping capabilities of our system. To explore the mapping
+on-demand raycasting, and ESIKF sequential update, we con- accuracy across different algorithms and ensure fairness, we
+ducted a thorough study on our private dataset and MARS- compare our system with FAST-LIO2, R3LIVE, and FAST-
+LVIG dataset. The results are presented in Section I (System LIVO in scenes characterized by rich texture and structured
+ModuleValidation)intheSupplementaryMaterial[53]dueto environments. We take the sequences “SYSU 01”, “HKU
+the space limit. As confirmed in the results, our system can Landmark” and “CBD Building 01” as examples. Fig. S9 in
+achieverobustandaccurateposeestimationinbothstructured theSupplementaryMaterial[53]showsthecoloredpointmaps
+and unstructured environments, under severe light variations, of these sequences reconstructed in real time. We can clearly
+inremarkablylarge-scalescenarioswithlong-term,high-speed observe that the point maps generated by FAST-LIVO2 retain
+datacollection,andeveninextremelynarrowspaceswithfew the finest details among all the systems, the enlarged views of
+LiDAR measurements. the colored point maps are akin to those in the actual RGB
+image. In the “SYSU 01” sequence, our algorithm produces
+fewerwhitenoisedotsonthesignboardbecausewenormalize
+C. LiDAR Degenerated and Visually Challenging Environ-
+the image colors to a reasonable exposure time using the
+ments
+recovered exposure time before coloring, resulting in rarely
+Inthisexperiment,weevaluatetherobustnessofoursystem overexposed colored point maps. The reconstruction of the
+under environments experiencing LiDAR degeneration and/or humanandmotorcyclein“CBDBuilding01”alsoexemplifies
+visual challenges, comparing it with the qualitative mapping our ability to rebuild the details of unstructured objects. In all
+results of FAST-LIVO and R3LIVE in 8 sequences as shown sequences, the estimated final position returns to the starting
+
+===== PAGE 15 =====
+15
+Fig. 10: The mapping results generated in real time in LiDAR degenerated scenes. The point clouds from top to bottom
+correspond to “Bright Screen Wall”, “Black Screen Wall”, “HIT Graffiti Wall” (the third and fourth rows), “Banner Wall”,
+“HKU Lecture Center”, respectively, showing the comparison of colored point cloud constructed FAST-LIVO2, FAST-LIVO
+or R3LIVE (see more details on YouTube: youtu.be/aSAwVqR22mo).
+point with an end-to-end error of less than 0.01 m. We also processing time. For R3LIVE, although also employing a
+tested FAST-LIVO2 in the remaining sequences of the prviate direct method, its pixel-wise image alignment necessitates the
+dataset, with mapping results shown in Fig. S10-S13 in the use of a large number of visual map points. In contrast, our
+Supplementary Material [53]. approach uses sparse points with reference patches, enabling
+efficientalignment.Additionally,R3LIVEmaintainsacolored
+E. Run Time Analysis mapthatundergoesBayesianupdating,significantlyincreasing
+In this section, we evaluate the average computational time the computational load as the map resolution increases. For
+per LiDAR scan and image frame of our proposed system, FAST-LIO2, the average processing time per frame (Table S3
+tested on a desktop PC equipped with an Intel i7-10700K in the Supplementary Material [53] due to space constraints)
+CPU and 32 GB RAM. Our evaluations span public datasets is approximately 10.35 ms less than FAST-LIVO2 due to not
+includingHilti’22,Hilti’23,andNTU-VIRAL,andourprivate processing additional image measurements.
+dataset. As shown in Table III, our system exhibits the lowest FAST-LIVO2 also shows noticeable improvements over the
+processingtimeacrossallsequences.Theaveragecomputation predecessor FAST-LIVO. The primary enhancement stems
+time consumption on an Intel i7 processor is only 30.03 ms from our application of inverse compositional formulation in
+(17.13 ms per LiDAR scan and 12.90 ms per image frame), the sparse image alignment. Employing affine warping based
+fulfillingreal-timeoperationat10Hz.Besides,oursystemcan on the plane prior from LiDAR points further enhances the
+even operate in real time on ARM processors with an average convergence efficiency of our method. Consequently, FAST-
+processing time per frame of just 78.44 ms. LVI-SAM’s LIVO2 reduces the number of iterations per pyramid level
+LiDAR and visual feature extraction modules in LIO and from 10 to 3, while still achieving superior accuracy.
+VIO are time-consuming. In addition to the time consumed
+by LIO and VIO, LVI-SAM integrates IMU pre-integration
+X. APPLICATIONS
+constraints,visualodometryconstraints,andLiDARodometry To showcase the superior performance and versatility of
+constraintswithinafactorgraph,furtherincreasingtheoverall FAST-LIVO2 in real-world applications, we develop multiple
+
+===== PAGE 16 =====
+16
+Fig. 11: The mapping results generated in real time in complex LiDAR degenerated and visually challenging scenes. (a), (b),
+and(c)correspondto“HKUCulturalCenter”,“CBDBuilding03”,and“MiningTunnel”,respectively.Differentcoloredarrows
+indicatethedirectionsofdegenerationcausedbydifferentsensors(seemoredetailsonYouTube:youtu.be/aSAwVqR22mo).
+
+===== PAGE 17 =====
+17
+TABLEIII:Processingtime(ms)perLiDARandimageframe
+Onboard computer Flight controller
+Desired angular
+Trajectory MPC velocity Angular Velocity
+Dataset R3LIVE LVI- FAST- FAST-LIVO2 FAST-LIVO2 commands Controller Desired thrust Controller
+SAM LIVO (LiDAR/Image) (ARM)
+Position, velocity,
+Hilti’22 attitude feedback Desired
+ConstructionGround 105.03 × 52.33 36.52(20.44/15.05) 96.12 (200 Hz) moments
+ConstructionMultilevel 112.13 × 56.12 38.77(21.38/17.39) 95.38 Trajectory Extended Angular
+ConstructionStairs 125.41 138.47 51.34 39.33(24.32/15.01) 98.43 Planner Kalman filter f v e e e l d o b c a it c y k Mixer
+LongCorridor 120.42 109.97 48.68 41.42(26.21/15.21) 94.33
+Cupola 151.52 × 59.42 43.54(26.53/17.01) 98.12 Motor
+Position feedback IMU (200 Hz, PWM
+LowerGallery 119.74 131.37 51.15 41.11(25.69/15.42) 92.13 (10 Hz) filght control)
+AttictoUpperGallery 144.39 × 58.61 44.21(27.12/17.09) 91.15 LiDAR Camera
+OutsideBuilding 105.17 107.92 44.25 33.82(18.91/14.91) 85.43 D P e o n si s t e i o p n o i e n s t t i c m lo a u te d FAST-LIVO2 Image (10 Hz) STM32 Bu IM ild U -in
+Hilti’23
+Floor0 117.01 × 52.23 42.22(25.13/17.09) 92.24 Point cloud & IMU
+Floor1 106.11 106.98 50.14 43.12(27.43/15.69) 93.52 (10 Hz & 200 Hz, LiDAR)
+Battery On-board
+Floor2 154.65 × 53.24 41.78(26.12/15.66) 94.43 PC
+Basement 118.21 × 48.23 39.65(24.53/15.12) 93.42 Fig. 12: Fully onboard UAV navigation algorithm flowchart.
+Stairs 122.94 114.29 48.55 38.42(22.64/15.78) 95.53
+Parking3xfloorsdown 142.43 × 51.89 43.62(26.99/16.63) 94.22
+Largeroom 125.78 182.18 55.23 43.23(26.43/16.80) 93.28
+Largeroom(dark) 131.31 × 51.46 44.21(29.12/15.09) 92.29
+NTUVIRAL
+eee 01 105.89 113.61 38.22 31.45(17.24/14.21) 78.03
+eee 02 112.27 119.19 39.43 30.24(16.23/14.01) 79.22
+eee 03 108.11 108.77 37.53 29.44(16.12/13.32) 77.43
+nya 01 122.73 124.54 39.66 34.52(18.14/16.38) 79.44
+nya 02 111.96 117.18 35.11 32.23(17.33/14.90) 80.52
+nya 03 115.96 111.24 38.42 33.42(18.12/15.30) 78.95
+sbs 01 112.77 115.67 39.23 31.92(14.68/17.24) 78.32
+sbs 02 113.01 110.37 35.39 32.56(17.62/14.94) 72.43
+sbs 03 119.91 120.73 37.41 33.62(18.02/15.60) 75.56
+PrivateDataset
+RetailStreet 85.32 70.23 31.22 19.44(10.42/9.02) 64.12
+CBDBuilding01 79.22 65.32 29.14 18.22(10.32/7.90) 62.33
+CBDBuilding02 × × × 21.53(11.50/10.03) 69.98
+CBDBuilding03 × × × 21.89(11.98/9.91) 69.92
+HKULandmark 75.43 68.77 28.33 17.42(10.12/7.30) 63.21
+HKULectureCenter 70.42 × 31.45 18.12(10.99/7.13) 62.88
+HKUCentennialGarden 74.33 70.12 33.46 19.22(10.80/8.42) 64.52
+HKUCulturalCenter 102.34 × 35.62 21.43(11.42/10.01) 72.43
+HKUMainBuilding 75.62 × 30.21 19.43(10.33/9.10) 65.31
+HKUSTRedSculpture 84.22 90.13 32.43 20.14(11.12/9.02) 65.42
+HITGraffitiWall 112.56 × 39.98 21.71(10.55/11.16) 68.99
+BannerWall 74.13 × 30.22 19.32(10.01/9.31) 63.43
+BrightScreenWall 73.23 × 28.43 18.22(9.92/8.30) 61.21
+BlackScreenWall 71.42 × 27.66 17.99(9.10/8.89) 60.91
+OfficeBuildingWall × × × 19.42(10.11/9.31) 62.33
+Fig.13:(a)and(b)aretheenlargedpointmapsofthe“Woods”
+NarrowCorridor × × × 18.44(8.32/10.12) 61.42
+LongCorridor × × × 19.53(10.43/9.10) 62.55 and “Narrow Opening” experiments, respectively. The red
+MiningTunnel × × × 29.43(15.42/14.01) 79.32 points in (a1), (a3), and (b4) represent the current scan. (a2)
+SYSU01 112.66 88.95 32.23 23.65(12.51/11.14) 77.43
+and (a4) represent the first-person view at the corresponding
+SYSU02 110.12 × 32.12 22.63(11.82/10.81) 72.31
+Average 108.36 108.45 41.43 30.03(17.13/12.90) 78.44 locations.(b1),(b2),and(b3)depictthethird-personview(see
+×denotesthesystemtotallyfailed. more details on YouTube: youtu.be/aSAwVqR22mo).
+Besideslocalization,FAST-LIVO2suppliesadenseregistered
+solutions, including fully onboard autonomous UAV naviga-
+point cloud to the planning module, the Bubble planner [55],
+tion, airborne mapping, textured mesh generation, and 3D
+which plans a smooth trajectory that is then tracked by an
+Gaussian splatting reconstruction for 3D scene representation.
+on-manifold Model Predictive Control (MPC) [56]. The MPC
+A. Fully Onboard Autonomous UAV Navigation
+calculates the desired angular rates and thrust, which are
+Given the high precision and robust localization perfor- trackedbyrespectivelow-levelangularratecontrollersrunning
+mance of FAST-LIVO2, along with its real-time capabilities, on the flight controller. Importantly, the MPC, Planner, and
+we conduct closed-loop autonomous UAV flights. FAST-LIVO2alloperateontheonboardcomputerinrealtime.
+1) System Configurations: The hardware and software 2) UAV Autonomous Navigation: We conduct 4 fully on-
+setup are illustrated in Fig. 12. For hardware, we use a board autonomous UAV navigation experiments, “Basement”,
+NUC (Intel i7-1360P CPU and 32 GB RAM) as the onboard “Woods”, “Narrow Opening”, and “SYSU Campus” (Ta-
+computer. In terms of software, the localization component is ble S2 in the Supplementary Material [53]). “Basement” and
+powered by FAST-LIVO2, which provides position feedback “Woods” experiments are fully autonomous flights incorpo-
+at 10Hz. The localizationr result is fed to the flight controller rating all planning, MPC, and FAST-LIVO2 modules, while
+to achieve 200Hz feedback on position, velocity, and attitude. “Narrow Opening” and “SYSU Campus” are manual flights
+
+===== PAGE 18 =====
+18
+with only MPC and FAST-LIVO2 (without the planning com-
+ponent). As can be seen, “Basement” and “Woods” showcase
+the UAV’s successful autonomous navigation and obstacle
+avoidance. In “Narrow Opening”, the UAV is commanded to
+fly close proximity to a wall leading to few LiDAR points
+measurements. Nevertheless, the raycasting module recalls a
+greater number of visual map points, providing abundant con-
+straints for localization, which allows for stable localization.
+Moreover, “Basement” and “Narrow Opening” experience
+LiDAR degeneration, observing only a single wall (see Fig. 1
+(e1)and(e4),Fig.13(b1-b4)),alongwithsignificantexposure
+variations (see Fig. 1 (e5-e6)). Despite these challenges, our
+UAV system performed exceptionally well. “Woods” involves
+the UAV moving at high speeds up to 3 m/s, demanding
+rapid response from the entire UAV system (see Fig. 13 (a1-
+a4)). “SYSU Campus”, a non-degenerated scene, primarily
+demonstrates the onboard high-precision mapping capabilities
+(see Fig. S14 in the Supplementary Material [53]). Finally, it
+is worth mentioning that in all these four UAV flights, severe
+lighting variation occurred. FAST-LIVO2 is able to estimate
+exposuretimethatcloselyfollowstheground-truthvalues(see
+Fig. S15 in the Supplementary Material [53]).
+Regarding onboard computational time, the need to run
+MPC (at 100 Hz) and Planning (at 10 Hz) on the onboard
+computer consumes computational resources and memory,
+limiting the computation resources available to FAST-LIVO2.
+Despite of the concurrent execution of control and planning,
+as illustrated in Fig. 14, the average onboard processing
+time per LiDAR scan and image frame for FAST-LIVO2,
+approximately 53.47 ms, is still well below the frame period
+100 ms. The average processing times for planning and MPC
+are 8.43 ms and 18.5 ms, respectively. The total average
+processing time of 80.4 ms meets very well the real-time
+requirements for onboard operations.
+80
+60
+40
+20
+0
+FAST-LIVO2 Planning MPC(10 times) Total time
+)sm(
+emiT
+Fig.15:(a)and(b)arethemeshandtexturemappingof“CBD
+Building01”,respectively.(c)isthetexturemappingof“Retail
+Street”, with (c1) and (c2) showing local details.
+whose real-time mapping results are illustrated in Fig. 1 (a-
+c), with (a) and (c) corresponding to “HKisland01”, and
+(b) depicting “HKairport01”. The results demonstrate the
+effectiveness of FAST-LIVO2 in unstructured environments
+such as forests and islands. The system successfully captures
+many fine structures and sharp coloring effects, including
+buildings, lane marks on roads, road curbs, tree crowns, and
+rocks, all of which are clearly visible. The APE (RMSE) for
+these sequences are 0.64 m and 0.27 m for FAST-LIVO2,
+respectively, compared to 2.76 m and 0.52 m for R3LIVE.
+The average processing times on the desktop PC (Section
+IX-A), are approximately 25.2 ms and 21.8 ms, respectively,
+compared to 110.5 ms and 100.2 ms for R3LIVE.
+C. Supporting3DSceneApplications:MeshGeneration,Tex-
+Onboard UAV Experiment Time Cost ture, and Gaussian Splatting
+Leveragingthehigh-precisionsensorlocalizationanddense
+3D colored point map obtained from FAST-LIVO2, we de-
+velop software applications for rendering pipelines including
+meshing and texturing, as well as emerging NeRF-like ren-
+dering pipeline such as 3D Gaussian Splatting (3DGS). For
+meshing,weemployVDBFusion[57]basedontheTruncated
+Signed Distance Function (TSDF) in “CBD Building 01”,
+shownin Fig.15 (a).The sharpedgeson thecolumns andthe
+distinct structure of the roof are clearly visible, demonstrating
+Fig. 14: The processing time of each module and in total in the high quality of the mesh. This level of detail is achieved
+UAV autonomous navigation experiments across “Basement”, due to the high density of FAST-LIVO2’s point clouds and
+“Woods”,“NarrowOpening”,and“SYSUCampus”.TheMPC the exceptional accuracy of structural reconstruction. After
+executes at 100 Hz while planning and FAST-LIVO2 execute mesh construction, we use OpenMVS [58] to perform texture
+at 10 Hz, so its computation time is counted for 10 times. mapping using the estimated camera poses in “CBD Building
+01” and “Retail Street”, shown in Fig. 15 (b-c). In Fig. 15
+B. Airborne Mapping
+(c1-c2),thetextureimagesappliedonthetriangularfacetsare
+Airbornemappingrepresentsacrucialtaskinsurveyingand seamless and accurately aligned, resulting in a highly clear
+mapping applications. To evaluate the suitability of FAST- and precise texture mapping. This is attributed to pixel-level
+LIVO2 for this application, we conduct an aerial mapping image alignment achieved by FAST-LIVO2.
+experiment using the public dataset MARS-LVIG [52] whose The dense color point clouds from FAST-LIVO2 can also
+hardware configuration is detailed in Section VIII-A. We directly serve as the input of 3DGS. We conduct tests on
+evaluatethetwosequences“HKairport01”and“HKisland01”, the sequence “CBD Building 01” utilizing 300 frames out
+
+===== PAGE 19 =====
+19
+Fig. 16: Comparison of ground-truth image, COLMAP+3DGS, and FAST-LIVO2+3DGS in terms of render details, computa-
+tional time (time for generating point clouds and estimating poses + training time), and PSNR for a random frame in “CBD
+Building 01” (see more details on YouTube: youtu.be/aSAwVqR22mo).
+of a total of 1,180 images. The results are shown in Fig. 16. theslidingwindowoptimizationintoFAST-LIVO2tomitigate
+ComparedtoCOLMAP[59],ourmethodsignificantlyreduces this long-term drift. Moreover, the accurate and dense colored
+the time required to obtain dense point clouds and poses point maps could be used to extract semantic information for
+from 9 hours to 21 s. However, the training time increases object-level semantic mapping.
+from 10 min and 59 s to 15 min and 30 s. This increase is
+attributed to the denser point clouds (downsampled to 5 cm),
+whichintroducemoreparameterstooptimize.Nonetheless,the
+REFERENCES
+increased density and precision of our point clouds result in a
+[1] R. Mur-Artal and J. D. Tardo´s, “Orb-slam2: An open-source slam
+slightly higher Peak Signal-to-Noise Ratio (PSNR) compared system for monocular, stereo, and rgb-d cameras,” IEEE transactions
+to the PSNR obtained from COLMAP inputs. onrobotics,vol.33,no.5,pp.1255–1262,2017.
+[2] J. Engel, V. Koltun, and D. Cremers, “Direct sparse odometry,” IEEE
+transactionsonpatternanalysisandmachineintelligence,vol.40,no.3,
+XI. CONCLUSIONANDFUTUREWORK
+pp.611–625,2017.
+This paper proposed FAST-LIVO2, a direct LIVO frame- [3] J. Engel, T. Scho¨ps, and D. Cremers, “Lsd-slam: Large-scale direct
+monocularslam,”inEuropeanconferenceoncomputervision. Springer,
+workachievingfast,accurate,androbuststateestimationwhile
+2014,pp.834–849.
+reconstructing the map on the fly. FAST-LIVO2 can achieve [4] C.Forster,Z.Zhang,M.Gassner,M.Werlberger,andD.Scaramuzza,
+highlocalizationaccuracywhilebeingrobusttosevereLiDAR “Svo:Semidirectvisualodometryformonocularandmulticamerasys-
+tems,” IEEE Transactions on Robotics, vol. 33, no. 2, pp. 249–265,
+and/or visual degeneration.
+2016.
+The gain in speed is attributed to the use of raw LiDAR,
+[5] J. Zhang and S. Singh, “Loam: Lidar odometry and mapping in real-
+inertial, and camera measurements within an efficient ESIKF time.”inRobotics:ScienceandSystems,vol.2,no.9,2014.
+framework with sequential update. In the image update, an [6] J. Lin and F. Zhang, “Loam livox: A fast, robust, high-precision lidar
+odometryandmappingpackageforlidarsofsmallfov,”in2020IEEE
+inverse compositional formulation along with a sparse patch-
+InternationalConferenceonRoboticsandAutomation(ICRA). IEEE,
+based image alignment is further adopted to boost the effi- 2020,pp.3126–3131.
+ciency. The gain in accuracy is attributed to the use (and [7] T.ShanandB.Englot,“Lego-loam:Lightweightandground-optimized
+lidar odometry and mapping on variable terrain,” in 2018 IEEE/RSJ
+even refine) of plane priors from LiDAR points to enhance
+International Conference on Intelligent Robots and Systems (IROS).
+accuracy of image alignment. Besides, a single unified voxel IEEE,2018,pp.4758–4765.
+mapisusedtomanagesimultaneouslythemappointsandthe [8] C.Zheng,Q.Zhu,W.Xu,X.Liu,Q.Guo,andF.Zhang,“Fast-livo:Fast
+andtightly-coupledsparse-directlidar-inertial-visualodometry,”in2022
+observedhigh-resolutionimagemeasurements.Thevoxelmap
+IEEE/RSJ International Conference on Intelligent Robots and Systems
+structure, which supports geometry construction and update, (IROS). IEEE,2022,pp.4003–4009.
+visual map point generation and update, and reference patch [9] T.Qin,P.Li,andS.Shen,“Vins-mono:Arobustandversatilemonocular
+visual-inertialstateestimator,”IEEETransactionsonRobotics,vol.34,
+update, is developed and validated. The gain in robustness is
+no.4,pp.1004–1020,2018.
+duetoreal-timeestimationofexposuretime,whicheffectively [10] R.Mur-Artal,J.M.M.Montiel,andJ.D.Tardos,“Orb-slam:aversatile
+handles environment illumination variation, and on-demand and accurate monocular slam system,” IEEE transactions on robotics,
+vol.31,no.5,pp.1147–1163,2015.
+voxel raycasting to cope with LiDARs’ close proximity blind
+[11] M.IraniandP.Anandan,“Allaboutdirectmethods,”inProc.Workshop
+zones. The efficiency and accuracy of FAST-LIVO2 were Vis.Algorithms,TheoryPract,1999,pp.267–277.
+evaluated on extensive public datasets, while the robustness [12] C. Forster, M. Pizzoli, and D. Scaramuzza, “Svo: Fast semi-direct
+and effectiveness of each system module were evaluated on monocularvisualodometry,”in2014IEEEinternationalconferenceon
+roboticsandautomation(ICRA). IEEE,2014,pp.15–22.
+privatedataset.TheapplicationsofFAST-LIVO2inreal-world
+[13] W.Xu,Y.Cai,D.He,J.Lin,andF.Zhang,“Fast-lio2:Fastdirectlidar-
+robotics applications, such as UAV navigation, 3D mapping, inertialodometry,”IEEETransactionsonRobotics,pp.1–21,2022.
+and model rendering, were also demonstrated. [14] C. Yuan, W. Xu, X. Liu, X. Hong, and F. Zhang, “Efficient and
+probabilisticadaptivevoxelmappingforaccurateonlinelidarodometry,”
+As an odometry, FAST-LIVO2 may have drifts over long
+IEEE Robotics and Automation Letters, vol. 7, no. 3, pp. 8518–8525,
+distances. In the future, we could integrate loop closure and 2022.
+
+===== PAGE 20 =====
+20
+[15] M. Meilland, A. I. Comport, and P. Rives, “Real-time dense visual [37] ——, “R 3 live++: A robust, real-time, radiance reconstruction pack-
+tracking under large lighting variations,” in British Machine Vision age with a tightly-coupled lidar-inertial-visual state estimator,” arXiv
+Conference. BritishMachineVisionAssociation,2011,pp.45–1. preprintarXiv:2209.03666,2022.
+[16] T.Tykka¨la¨,C.Audras,andA.I.Comport,“Directiterativeclosestpoint [38] J. Engel, V. Usenko, and D. Cremers, “A photometrically cali-
+forreal-timevisualodometry,”in2011IEEEInternationalConference brated benchmark for monocular visual odometry,” arXiv preprint
+on Computer Vision Workshops (ICCV Workshops). IEEE, 2011, pp. arXiv:1607.02555,2016.
+2050–2056. [39] W. Wang, J. Liu, C. Wang, B. Luo, and C. Zhang, “Dv-loam: Direct
+[17] C. Kerl, J. Sturm, and D. Cremers, “Robust odometry estimation for visual lidar odometry and mapping,” Remote Sensing, vol. 13, no. 16,
+rgb-dcameras,”in2013IEEEinternationalconferenceonroboticsand p.3340,2021.
+automation. IEEE,2013,pp.3748–3754. [40] Z. Yuan, Q. Wang, K. Cheng, T. Hao, and X. Yang, “Sdv-loam:
+[18] J.Engel,J.Sturm,andD.Cremers,“Semi-densevisualodometryfora Semi-directvisual-lidarodometryandmapping,”IEEETransactionson
+monocularcamera,”inProceedingsoftheIEEEinternationalconference PatternAnalysisandMachineIntelligence,2023.
+oncomputervision,2013,pp.1449–1456. [41] H. Zhang, L. Du, S. Bao, J. Yuan, and S. Ma, “Lvio-fusion:tightly-
+[19] K.Chen,R.Nemiroff,andB.T.Lopez,“Directlidar-inertialodometry: coupledlidar-visual-inertialodometryandmappingindegenerateenvi-
+Lightweightliowithcontinuous-timemotioncorrection,”in2023IEEE ronments,” IEEE Robotics and Automation Letters, vol. 9, no. 4, pp.
+InternationalConferenceonRoboticsandAutomation(ICRA). IEEE, 3783–3790,2024.
+2023,pp.3983–3989. [42] W. Xu and F. Zhang, “Fast-lio: A fast, robust lidar-inertial odometry
+[20] Z. Wang, L. Zhang, Y. Shen, and Y. Zhou, “D-liom: Tightly-coupled package by tightly-coupled iterated kalman filter,” IEEE Robotics and
+direct lidar-inertial odometry and mapping,” IEEE Transactions on AutomationLetters,pp.1–1,2021.
+Multimedia,2022. [43] D.He,W.Xu,andF.Zhang,“Symbolicrepresentationandtoolkitde-
+[21] J. Zhang and S. Singh, “Laser–visual–inertial odometry and mapping velopmentofiteratederror-stateextendedkalmanfiltersonmanifolds,”
+with high robustness and low drift,” Journal of field robotics, vol. 35, IEEETransactionsonIndustrialElectronics,2023.
+no.8,pp.1242–1264,2018. [44] D. Willner, C.-B. Chang, and K.-P. Dunn, “Kalman filter algorithms
+[22] W.Shao,S.Vijayarangan,C.Li,andG.Kantor,“Stereovisualinertial for a multi-sensor system,” in 1976 IEEE conference on decision and
+lidarsimultaneouslocalizationandmapping,”in2019IEEE/RSJInter- control including the 15th symposium on adaptive processes. IEEE,
+nationalConferenceonIntelligentRobotsandSystems(IROS). IEEE, 1976,pp.570–574.
+2019,pp.370–377. [45] J.MaandS.Sun,“Globallyoptimaldistributedandsequentialstatefu-
+[23] J. Zhang, M. Kaess, and S. Singh, “A real-time method for depth sionfiltersformulti-sensorsystemswithcorrelatednoises,”Information
+enhanced visual odometry,” Autonomous Robots, vol. 41, pp. 31–43, Fusion,p.101885,2023.
+2017. [46] Y.Ren,Y.Cai,F.Zhu,S.Liang,andF.Zhang,“Rog-map:Anefficient
+[24] J.Graeter,A.Wilczynski,andM.Lauer,“Limo:Lidar-monocularvisual robocentric occupancy grid map for large-scene and high-resolution
+odometry,” in 2018 IEEE/RSJ international conference on intelligent lidar-basedmotionplanning,”arXivpreprintarXiv:2302.14819,2023.
+robotsandsystems(IROS). IEEE,2018,pp.7872–7879. [47] R. M. Stereopsis, “Accurate, dense, and robust multiview stereopsis,”
+[25] Y. Zhu, C. Zheng, C. Yuan, X. Huang, and X. Hong, “Camvox: A IEEETRANSACTIONSONPATTERNANALYSISANDMACHINEIN-
+low-costandaccuratelidar-assistedvisualslamsystem,”in2021IEEE TELLIGENCE,vol.32,no.8,2010.
+InternationalConferenceonRoboticsandAutomation(ICRA). IEEE, [48] S. Baker and I. Matthews, “Lucas-kanade 20 years on: A unifying
+2021,pp.5049–5055. framework,”Internationaljournalofcomputervision,vol.56,pp.221–
+[26] S.-S. Huang, Z.-Y. Ma, T.-J. Mu, H. Fu, and S.-M. Hu, “Lidar- 255,2004.
+monocularvisualodometryusingpointandlinefeatures,”in2020IEEE [49] T.-M. Nguyen, S. Yuan, M. Cao, Y. Lyu, T. H. Nguyen, and L. Xie,
+InternationalConferenceonRoboticsandAutomation(ICRA). IEEE, “Ntuviral:Avisual-inertial-ranging-lidardataset,fromanaerialvehicle
+2020,pp.1091–1097. viewpoint,” The International Journal of Robotics Research, vol. 41,
+[27] C. Campos, R. Elvira, J. J. G. Rodr´ıguez, J. M. Montiel, and J. D. no.3,pp.270–280,2022.
+Tardo´s,“Orb-slam3:Anaccurateopen-sourcelibraryforvisual,visual– [50] M. Helmberger, K. Morin, B. Berner, N. Kumar, G. Cioffi, and
+inertial, and multimap slam,” IEEE Transactions on Robotics, vol. 37, D.Scaramuzza,“Thehiltislamchallengedataset,”IEEERoboticsand
+no.6,pp.1874–1890,2021. AutomationLetters,vol.7,no.3,pp.7518–7525,2022.
+[28] Y.-S.Shin,Y.S.Park,andA.Kim,“Dvl-slam:Sparsedepthenhanced [51] L.Zhang,M.Helmberger,L.F.T.Fu,D.Wisth,M.Camurri,D.Scara-
+direct visual-lidar slam,” Autonomous Robots, vol. 44, no. 2, pp. 115– muzza, and M. Fallon, “Hilti-oxford dataset: A millimeter-accurate
+130,2020. benchmarkforsimultaneouslocalizationandmapping,”IEEERobotics
+[29] X.Zuo,P.Geneva,W.Lee,Y.Liu,andG.Huang,“Lic-fusion:Lidar- andAutomationLetters,vol.8,no.1,pp.408–415,2022.
+inertial-cameraodometry,”in2019IEEE/RSJInternationalConference [52] H.Li,Y.Zou,N.Chen,J.Lin,X.Liu,W.Xu,C.Zheng,R.Li,D.He,
+onIntelligentRobotsandSystems(IROS),2019,pp.5848–5854. F. Kong, et al., “Mars-lvig dataset: A multi-sensor aerial robots slam
+[30] K.Sun,K.Mohta,B.Pfrommer,M.Watterson,S.Liu,Y.Mulgaonkar, dataset for lidar-visual-inertial-gnss fusion,” The International Journal
+C.J.Taylor,andV.Kumar,“Robuststereovisualinertialodometryfor ofRoboticsResearch,p.02783649241227968,2024.
+fastautonomousflight,”IEEERoboticsandAutomationLetters,vol.3, [53] “Supplementary material: Fast-livo2: Fast, direct lidar-inertial-visual
+no.2,pp.965–972,2018. odometry,”availableonline:https://github.com/hku-mars/FAST-LIVO2/
+[31] X.Zuo,Y.Yang,P.Geneva,J.Lv,Y.Liu,G.Huang,andM.Pollefeys, blob/main/Supplementary/LIVO2 supplementary.pdf.
+“Lic-fusion 2.0: Lidar-inertial-camera odometry with sliding-window [54] C.Klug,C.Arth,D.Schmalstieg,andT.Gloor,“Measurementuncer-
+plane-featuretracking,”in2020IEEE/RSJInternationalConferenceon taintyanalysisofarobotictotalstationsimulation,”inIECON2018-44th
+IntelligentRobotsandSystems(IROS). IEEE,2020,pp.5112–5119. AnnualConferenceoftheIEEEIndustrialElectronicsSociety. IEEE,
+[32] D. Wisth, M. Camurri, S. Das, and M. Fallon, “Unified multi-modal 2018,pp.2576–2582.
+landmark tracking for tightly coupled lidar-visual-inertial odometry,” [55] Y. Ren, F. Zhu, W. Liu, Z. Wang, Y. Lin, F. Gao, and F. Zhang,
+IEEE Robotics and Automation Letters, vol. 6, no. 2, pp. 1004–1011, “Bubble planner: Planning high-speed smooth quadrotor trajectories
+2021. using receding corridors,” in 2022 IEEE/RSJ International Conference
+[33] J. Lin, C. Zheng, W. Xu, and F. Zhang, “R2live: A robust, real-time, onIntelligentRobotsandSystems(IROS). IEEE,2022,pp.6332–6339.
+lidar-inertial-visualtightly-coupledstateestimatorandmapping,”IEEE [56] G.Lu,W.Xu,andF.Zhang,“On-manifoldmodelpredictivecontrolfor
+RoboticsandAutomationLetters,vol.6,no.4,pp.7469–7476,2021. trajectorytrackingonroboticsystems,”IEEETransactionsonIndustrial
+[34] C.F.W.BellB.M.,“Theiteratedkalmanfilterupdateasagauss-newton Electronics,vol.70,no.9,pp.9192–9202,2022.
+method,”AutomaticControlIEEETransactions,vol.38,no.2,pp.294– [57] I. Vizzo, T. Guadagnino, J. Behley, and C. Stachniss, “Vdbfusion:
+297,1993. Flexible and efficient tsdf integration of range sensor data,” Sensors,
+[35] T. Shan, B. Englot, C. Ratti, and D. Rus, “Lvi-sam: Tightly-coupled vol. 22, no. 3, 2022. [Online]. Available: https://www.mdpi.com/
+lidar-visual-inertial odometry via smoothing and mapping,” in 2021 1424-8220/22/3/1296
+IEEE international conference on robotics and automation (ICRA). [58] D. Cernea, “Openmvs: multi-view stereo reconstruction library. 2020,”
+IEEE,2021,pp.5692–5698. URL:https://cdcseacave.github.io/openMVS,vol.5,no.6,p.7,2020.
+[36] J.LinandF.Zhang,“R3live:Arobust,real-time,rgb-colored,lidar- [59] J. L. Scho¨nberger and J.-M. Frahm, “Structure-from-motion revisited,”
+inertial-visual tightly-coupled state estimation and mapping package,” in2016IEEEConferenceonComputerVisionandPatternRecognition
+in2022InternationalConferenceonRoboticsandAutomation(ICRA). (CVPR),2016,pp.4104–4113.
+IEEE,2022,pp.10672–10678.
+
+===== PAGE 21 =====
+1
+Supplementary Material for FAST-LIVO2: Fast, Direct LiDAR-Inertial-Visual Odometry
+I.SYSTEMMODULEVALIDATION
+In this section, we validate the key modules of our system, including the affine warping, normal refinement, reference patch
+update, on-demanding raycasting query, exposure time estimation, and ESIKF sequential update utilizing the FAST-LIVO2
+private dataset and MARS-LVIG dataset.
+A. Evaluation of Affine Warping
+In this experiment, we aim to comprehensively evaluate the various affine warping effects based on the constant depth
+assumption (a common technique utilized in semi-dense methods), the plane prior from point clouds, and the refined plane
+normal of our proposed system (denoted as “Constant depth”, “Plane prior”, and “Plane normal refined“, respectively). To
+achieve this, we compare the mapping results and drift metrics of the three methods on “CBD Building 02” and “Office
+Building Wall”. As depicted in Fig. S2, “Plane normal refined” delivers the most clear and accurate mapping results and the
+next best is “Plane prior”. Notably, “Plane normal refined” renders text and patterns on the ground and walls, as well as lane
+markings, with remarkable clarity. Moreover, the drift associated with “Plane prior” and “Plane normal refined” remains below
+0.01m, whereas “Constant depth” does not return to the starting position, experiencing a drift of 0.22m. Such results confirm
+the enhanced performance of affine warping based on the plane prior and enhancements by the plane normal refinement.
+Besides,wecomparewarpedprojectioneffectsbasedon“Constantdepth”and“Planeprior”onthesequence“CBDBuilding
+02”and“OfficeBuildingWall”.Werandomlyselectseveralimageframesfromthesetwosequencesforthequalitativeanalysis.
+For each frame, we project the reference patches attached to the visual map points visible in the frame onto a blank image of
+the current frame. This process yields a novel RGB image. If the affine warping and pose estimation are both performed well,
+areas with patch projections will produce a seamless and minimally distorted appearance, closely resembling the raw RGB
+image. The comparison of warped patches is presented in Fig. S1. The results indicate that the pose accuracy and warped
+performance under “Plane prior” significantly outperform those under “Constant depth” .
+Fig. S1: (a) and (c) depict the warped patches derived from the constant depth assumption, while (b) and (d) represent those
+based on the plane prior.
+B. Evaluation of Reference Patch Update and Normal Convergence
+In this experiment, we validate the effects of the reference patch update strategy and normal convergence on “HIT Graffiti
+Wall” and “HKU Centennial Garden”. As shown in Fig. S3, (a) and (b) are the reconstructed point clouds of these two
+sequences. On the right, for each region from A to H, we respectively present five patch observations captured at different
+poses, each with a patch size of 40×40 pixels for visualization. These patches are observed in camera frames located at
+corresponding numbers on the left. As can be seen, our reference path update strategy tends to choose a high-resolution
+reference patch that faces the plane along its normal. It is also noticed that, despite of visual map points and patches generated
+at non-planar locations (e.g., tree leaves, trunk, and a lamp stand), the overall mapping quality is still high.
+We also evaluate the convergence of our proposed normal estimation across patches in regions A to H. Each patch is in the
+size of 11×11 pixels. The initial normal vector is estimated from the LiDAR points. The convergence curves, which represent
+the angle change between the initial and optimized normal vectors at each iteration number, are shown in Fig. S3. Regions
+A, C, D, and E are structured areas, whereas regions B, F, G, and H are unstructured ones. It can be observed that normal
+vectors for structured areas converge faster (within 6 iterations) with small normal refinement (2 to 4 degrees) because the
+initial normal provided by point clouds is relatively accurate. In unstructured areas, such as shrubs and tree leaves (i.e., B and
+F), the normal refinement is significant (up to 9 degrees) and requires 9 iterations to converge. Overall, normal refinement
+across these 8 regions demonstrates good convergence properties.
+
+===== PAGE 22 =====
+2
+Fig. S2: (a) and (b) are FAST-LIVO2 default mapping results in “CBD Building 02” and “Office Building Wall”, respectively.
+(a1, b1), (a2, b2), (a3, b3) are enlarged views of the point clouds using “Plane normal refined”, “Plane prior”, and “Constant
+depth”, respectively.
+Iteration Number
+)seergeD(
+egnahC
+elgnA
+(c) Normal Convergence Across Different Visual Map Points (A to H)
+A
+B
+C
+D
+E
+F
+G
+H
+Fig. S3: The illustration of reference patch update. (a) and (b) are the reconstructed point clouds of sequences “HIT Graffiti
+Wall” and “HKU Centennial Garden”, respectively. Regions A to H encompass both structured and unstructured areas in the
+scene. On the right, the 40×40 image patches illustrate various observations for the same region, with numbers indicating
+the corresponding camera frame on the left. The reference patch for each region is highlighted by a red box. (c) shows the
+convergence of patch normal across regions A to H.
+
+===== PAGE 23 =====
+3
+(a) (b)
+Weakly textured wall
+1.9m
+`
+Fig. S4: The illustration of on-demand raycasting and voxel query. (a) displays a top-down view of the reconstructed point
+cloudfor“NarrowCorridor”,withacorridorwidthof1.9m.In(a),thebluelineindicatesthetrajectoryandtheyellowarrows
+represent the direction of movement. The LiDAR camera sensor suite is turned to face a wall on the left side at the location
+contained in the dashed box. (b) shows the camera image during the turn, having dim lighting conditions and very few LiDAR
+points. In (b), blue dots represent points acquired from raycasting, yellow dots indicate points from voxel query, and red dots
+are points in the LiDAR scan.
+Ground Truth Retail Street Retail SHtreKetU Centennial Garden
+Estimated
+HKU Cultural Center HKU Main Building
+)sm(
+emiT
+erusopxE
+Fig. S5: Comparison of estimated exposure time versus ground truth exposure time in “Retail Street”, “HKU Centennial
+Garden”, “HKU Cultural Center”, and “HKU Main Building”.
+C. Evaluation of On-demand Raycasting
+In this experiment, we assess the performance of the on-demand raycasting module under extreme conditions where the
+currentandrecentLiDARscanshavefeworevennopointsduetoLiDARs’closeproximityblindzone1.Weusethesequence
+“Narrow Corridor” for an in-depth analysis illustrated in Fig. S4. In this sequence, we traverse an extremely narrow tunnel,
+approximately 1.9m in width, and turn to face the weakly textured wall on one side. Due to the limited points in the LiDAR
+scans when facing the wall, we can only acquire few visual map points through voxel query (yellow dots in Fig. S4 (b)). In
+this case, raycasting offers sufficient visual constraints to mitigate degeneration (blue dots in Fig. S4 (b)). The visualization
+results demonstrate that the on-demand raycasting module works well under challenging conditions with few points in LiDAR
+scans.
+D. Evaluation of Exposure Time Estimation
+In this experiment, we validate the exposure time estimation module in two parts: 1) For the sequence with fixed exposure
+and gain, we multiply each pixel of the received raw image by an exposure factor that changes sinusoidally over time. We
+verify the effectiveness of our estimation by comparing the estimated exposure times against the sinusoidal function applied.
+2) For sequences with auto-exposure and either fixed or auto-gain settings, we evaluate the accuracy of our estimated exposure
+times by comparing them with the ground truth values retrieved from the camera’s API.
+In part one, we test on the sequence “Retail Street”, applying an exposure factor to images with fixed exposure and gain. As
+showninFig.S5,theestimatedrelativeinverseexposuretimematchesthetruevaluesverywell,evidencingtheconvergenceof
+our exposure estimation in synthetic conditions. In part two, we use the sequences “HKU Centennial Garden”, “HKU Cultural
+Garden” and “HKU Main Building”, which have significant exposure time changes, for testing. We scale the estimated relative
+exposure times by the first frame to recover the actual exposure time (ms) of each frame. As shown in Fig. S5, the estimated
+exposuretimefollowscloselytheground-truthvalues,whichvalidatestheeffectivenessofourexposuretimeestimationmodule.
+The occasional mismatches are possibly due to the unmodeled response function and vignetting factor [38].
+1https://www.livoxtech.com/avia/specs
+
+===== PAGE 24 =====
+4
+E. Evaluation of ESIKF Sequential Update
+In this experiment, we evaluate different ESIKF update strategies for LiDAR and camera states. We compare asynchronous
+versussynchronousupdates,aswellasstandardversussequentialupdates.Specifically,weassessthreestrategies:“asynchronous
+(standard update)”, where the camera and LiDAR states are updated at their respective sampling times without scan
+recombination; “synchronous (standard update)”, where LiDAR scans are recombined to sync with camera images and the
+state is updated with both LiDAR and camera measurements within a standard ESIKF; and “synchronous (sequential update)”,
+where the LiDAR and camera are synced but the state is first updated by LiDAR measurements and then updated by camera
+measurements.Thesestrategiesareevaluatedintermsofaccuracy,robustness,andefficiencyusingthe“AMvalley03”sequence
+of the MARS-LVIG dataset. We select this sequence for several key reasons:
+(1) This sequence includes slopes that lead to both LiDAR and visual degenerations, making it a challenging test case.
+(2) This sequence represents an extremely large-scale scenario (approximately 901m×500m×130m) with long-term and
+high-speed data collection (covering 600s at a speed of 12m/s), where pose deviations are prone to occur (due to the
+long-termandhigh-speedconditions),andevenslightdriftscancausesignificantblurringinthecoloredpointclouds(due
+to the large scale), leading to more pronounced comparative results.
+(3) This sequence provides the RTK ground truth data, allowing for more accurate quantitative comparisons.
+Wecomparethequalitativemappingresults,quantitativeAPE,andtheaverageprocessingtimeofthethreeupdatestrategies.
+Theexperimentalconfigurationisasfollows:LiDARupdatesinvolveupto5iterations,visualupdatesuseathree-levelpyramid
+withupto5iterationsperlevelandnomorethan3iterationsperlevelwhenthecameraandLiDARareupdatedsimultaneously
+in a standard ESIKF, and the scale normalization factor (from visual photometric error to LiDAR point-to-plane distance) for
+the “synchronous (standard update)” is set to 0.0032, which has been meticulously tuned for optimal performance.
+Fig.S6,(a-c)presentthereconstructedcoloredpointcloudsforthissequence.Itisevidentthatthe“synchronous(sequential
+update)” strategy produces accurate mapping results, particularly in the areas highlighted by the blue and orange boxes, where
+the mountain roads are reconstructed without any layering. In contrast, the other two strategies exhibit misalignments in
+these areas, although the “synchronous (standard update)” performs slightly better than the “asynchronous (standard update)”.
+The superior performance of the “synchronous (sequential update)” strategy is mainly attributed to its robustness in handling
+significant LiDAR and visual degenerations, as seen in the white box (c3). This area features a large, textureless slope, and the
+UAV passes over it at a high speed, heavily relying on a strong prior. The other two methods, which rely solely on the IMU
+prior, struggle to compute a relatively accurate image gradient descent direction, leading to significant linearization errors.
+The APE (RMSE) metrics for the “AMvalley03” sequence are 3.12m, 2.45m, and 0.68m for the “asynchronous (standard
+update)”, “synchronous (standard update)”, and “synchronous (sequential update)”, respectively. The average processing times
+on a desktop PC (Section IX-A) are approximately 27.6ms, 49.9ms, and 23.1ms. Our proposed “synchronous (sequential
+update)”achievesthehighestefficiencyandaccuracy,whilethe“asynchronous(standardupdate)”hasthelowestaccuracy.The
+“synchronous (standard update)” is the most time-consuming, primarily because it requires fusing all LiDAR measurements at
+each level of the image pyramid.
+Overall, our proposed “synchronous (sequential update)” offers superior accuracy and efficiency, while the “asynchronous
+(standard update)” has the lowest accuracy, and the “synchronous (standard update)” is the most time-consuming.
+Fig. S6: (a), (b), and (c) are the mapping results in “AMvalley03” for the “asynchronous (standard update)”, “synchronous
+(standard update)”, and “synchronous (sequential update)” strategies, respectively. (a1, b1, c1) and (a2, b2, c2) are enlarged
+views of the point clouds for different update strategies. The blue line represents the UAV’s flight path, and the red points in
+(c3) indicate the LiDAR scan at that moment.
+
+===== PAGE 25 =====
+5
+II.ADDITIONALINFORMATION
+TABLE S1: Overview of FAST-LIVO2 Private Dataset
+Duration Sensor Return Exposure/ Exposure CloseSurface Scene
+Sequence
+(minute:second) Degeneration Origin1 GainMode Time2 Distance3 Characteristics
+RetailStreet 2min:15sec — ✓ Fixed/Fixed Outdoor
+CBDBuilding01 1min:58sec — ✓ Fixed/Auto Outdoor
+CBDBuilding02 3min:54sec LiDAR ✓ Auto/Fixed ✓ Outdoor
+CBDBuilding03 5min:01sec Camera,LiDAR ✓ Auto/Fixed ✓ Outdoor,Textureless
+HKULandmark 1min:31sec — ✓ Auto/Fixed ✓ Outdoor
+HKULectureCenter 1min:17sec LiDAR ✓ Auto/Fixed ✓ Indoor
+HKUCentennialGarden 1min:32sec LiDAR ✓ Auto/Fixed ✓ Outdoor
+HKUCulturalCenter 4min:01sec LiDAR ✓ Auto/Fixed ✓ Outdoor
+HKUMainBuilding 1min:36sec Camera,LiDAR ✓ Auto/Auto ✓ Out(In)door4,Textureless
+HKUSTRedSculpture 2min:10sec — ✓ Fixed/Auto Outdoor,Cluttered
+HITGraffitiWall 8min:57sec LiDAR ✓ Fixed/Auto Outdoor
+BannerWall 1min:40sec LiDAR ✓ Fixed/Auto Indoor,Dim
+BrightScreenWall 1min:18sec LiDAR ✓ Fixed/Auto Indoor
+BlackScreenWall 0min:56sec Camera,LiDAR ✓ Fixed/Auto Indoor,Textureless
+OfficeBuildingWall 1min:9sec LiDAR ✓ Fixed/Auto ✓ Outdoor
+NarrowCorridor 1min:1sec Camera,LiDAR ✓ Fixed/Auto ✓ Indoor,Dim,Textureless
+LongCorridor 1min:35sec LiDAR ✓ Fixed/Auto ✓ Indoor,Dim
+MiningTunnel 15min:49sec Camera,LiDAR ✓ Fixed/Auto Indoor,Dim,Textureless
+SYSU01 4min:40sec — ✓ Auto/Auto Outdoor,Light5
+SYSU02 4min:30sec Camera,LiDAR ✓ Auto/Auto Out(In)door,Light
+Total 66min:50sec Camera,LiDAR ✓ Auto(Fixed)/Auto(Fixed) ✓ ✓ Out(In)door,Light,
+Dim,Textureless
+1Sequencesarecollectedbytravelinginaloop,startingandendingatthesameposition.
+2Sequenceswithgroundtruthcameraexposuretimereadfromcamera’sAPI.
+3SequencesexistwhereLiDARcapturesno/limitedpointcloudsduetocloseproximityblindzones.
+4Sequencesincludetheprocessofmovingfromindoortooutdoorenvironments.
+5Sequencescharacterizedbysignificantlightingvariations.
+TABLE S2: Overview of UAV Autonomous Navigation Experiments
+FlightDuration Flight Sensor Return Exposure/ Exposure CloseProximity Scene
+Experiment
+(minute:second) Mode6 Degeneration origin GainMode Time toObstacles Characteristics
+Basement 5min Autonomous Camera,LiDAR ✓ Auto/Auto ✓ Out(In)door,Light
+NarrowOpening 2min:32sec Manual Camera,LiDAR ✓ Auto/Auto ✓ ✓ Out(In)door,Light
+SYSUCampus 3min:6sec Manual — ✓ Auto/Auto Outdoor,Light
+Woods 2min:49sec Autonomous Camera ✓ Auto/Fixed ✓ Outdoor,Cluttered
+6Inautonomousmode,FAST-LIVO2,planning,andMPCmodulesareallrunning.Inmanualmode,FAST-LIVO2andMPCarerunningwhileplanning
+isdisabled.
+TABLE S3: Average processing time per frame for FAST-LIO2 across different datasets
+Hilti’22&Hilti’23 ProcessingTime(ms) NTUVIRAL ProcessingTime(ms) PrivateDataset ProcessingTime(ms)
+ConstructionGround 24.32 eee 01 17.63 RetailStreet 10.23
+ConstructionMultilevel 23.21 eee 02 17.33 CBDBuilding01 10.40
+ConstructionStairs × eee 03 15.32 CBDBuilding02 ×
+LongCorridor 28.43 nya 01 19.99 CBDBuilding03 ×
+Cupola × nya 02 18.62 HKULandmark 11.62
+LowerGallery 24.49 nya 03 19.32 HKULectureCenter ×
+AttictoUpperGallery × nya 04 15.71 HKUCentennialGarden ×
+OutsideBuilding 18.67 sbs 02 16.10 HKUCulturalCenter ×
+Floor0 27.34 sbs 03 17.71 HKUMainBuilding ×
+Floor1 27.12 HKUSTRedSculpture 10.98
+Floor2 25.22 HITGraffitiWall ×
+Basement 22.31 BannerWall ×
+Stairs 20.91 BrightScreenWall ×
+Parking3xfloorsdown × BlackScreenWall ×
+Largeroom 29.26 OfficeBuildingWall ×
+Largeroom(dark) 28.20 NarrowCorridor ×
+LongCorridor ×
+MiningTunnel ×
+SYSU01 11.21
+SYSU02 ×
+OverallAverage 19.68
+7×denotesthesystemtotallyfailed.
+
+===== PAGE 26 =====
+6
+Fig. S7: Challenging environments captured in the FAST-LIVO2 private dataset.
+Fig. S8: The real-time mapping results of FAST-LIVO2 in the Hilti’22 dataset. (a) “Attic to Upper Gallery”, (b) “Cupola”, (c)
+“Lower Gallery”, and (d) “Construction Stairs”. The point clouds in (a-c) are colored by intensity, while (d) is colored using
+grayscale images.
+
+===== PAGE 27 =====
+7
+Fig. S9: The real-time mapping results generated online in rich texture and structured scenes. The point clouds from left to
+right correspond to “HKU Landmark”, “SYSU 01” and ”CBD Building 01”, respectively, showing the comparison of colored
+point cloud accuracy among FAST-LIVO2, FAST-LIVO, R3LIVE, and FAST-LIO2.
+Fig. S10: The real-time mapping results of FAST-LIVO2 in “HKU Main Building”, containing aggressive motions, indoor-to-
+outdoor, outdoor-to-indoor, and a weakly textured wall.
+
+===== PAGE 28 =====
+8
+Fig. S11: The real-time mapping results of FAST-LIVO2 in “SYSU 02”. (a) birdview of the colored point map, (b) drastic
+lighting changes from indoor to outdoor facing the sun, (c) closeup view of details.
+Fig.S12:Thereal-timemappingresultsofFAST-LIVO2in“LongCorridor”.(a)birdviewofthecoloredpointmap,(b)closeup
+view of details, (c) LiDAR facing a single wall causing LiDAR degeneration.
+
+===== PAGE 29 =====
+9
+Fig. S13: The real-time mapping results of FAST-LIVO2 in rich texture and structured scenes. (a) “HKUST Red Sculpture”,
+(b) “CBD Building 01”.
+Fig.S14:(a)istheenlargedpointcloudimageofthe“SYSUCampus”experiment.(a1),(a2),and(a3)representthethird-person
+view at the corresponding locations.
+
+===== PAGE 30 =====
+10
+Ground truth Basement Narrow Opening
+Estimated
+SYSU Campus Woods
+)sm(
+emiT
+erusopxE
+Fig. S15: Comparison of estimated exposure time versus the ground truth exposure time in “Basement”, “Narrow Opening”,
+“SYSU Campus”, and “Woods”.
