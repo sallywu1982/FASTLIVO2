@@ -13,6 +13,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+from pathlib import Path
 import sys
 
 import cv2
@@ -191,8 +192,11 @@ def main():
     conv = {"att_order": best[2], "att_T": bool(best[3]),
             "ext_order": best[4], "ext_T": bool(best[5]),
             "score": best[0], "frac": best[1]}
-    with open(os.path.join(WORK, "convention.json"), "w", encoding="utf-8") as f:
-        json.dump(conv, f, indent=2)
+    conv_path = os.path.realpath(os.path.join(WORK, "convention.json"))
+    work_rp = os.path.realpath(WORK)
+    if os.path.commonpath([conv_path, work_rp]) != work_rp:
+        raise ValueError("output path escapes work dir: %s" % conv_path)
+    Path(conv_path).write_text(json.dumps(conv, indent=2), encoding="utf-8")
     print("saved convention:", conv)
 
 

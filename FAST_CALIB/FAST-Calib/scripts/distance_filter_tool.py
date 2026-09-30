@@ -20,11 +20,21 @@
 """
 
 import os
+from pathlib import Path
 import sys
 import numpy as np
 import rosbag
 import sensor_msgs.point_cloud2 as pc2
 import open3d as o3d
+
+
+def safe_join(base, name):
+    """拼接并校验输出路径不越出基目录（防路径穿越）"""
+    base_rp = os.path.realpath(base)
+    full_rp = os.path.realpath(os.path.join(base_rp, name))
+    if os.path.commonpath([full_rp, base_rp]) != base_rp:
+        raise ValueError(f"输出路径越出基目录 {base_rp}: {full_rp}")
+    return full_rp
 
 # ===================== 通用：保存 PCD =====================
 
@@ -46,10 +56,9 @@ HEIGHT 1
 POINTS {N}
 DATA ascii
 """
-    with open(output_path, 'w') as f:
-        f.write(header)
-        for (x, y, z), inten in zip(points, intensities):
-            f.write(f"{x} {y} {z} {inten}\n")
+    lines = [header]
+    lines += ['%s %s %s %s\n' % (x, y, z, inten) for (x, y, z), inten in zip(points, intensities)]
+    Path(output_path).write_text("".join(lines), encoding="utf-8")
     print(f"[PCD] 保存带 intensity 字段的点云到: {output_path}")
 
 # ===================== 情况 1：PointCloud2 =====================
@@ -113,7 +122,7 @@ def convert_pointcloud2_bag_to_pcd(
         print("[ERROR] 未找到 PointCloud2 点云数据！", file=sys.stderr)
         return None
 
-    output_path = os.path.join(output_dir, pcd_name)
+    output_path = safe_join(output_dir, pcd_name)
     save_pcd_with_intensity(all_points, all_intensities, output_path)
     return output_path
 
@@ -163,7 +172,7 @@ def convert_livox_custom_bag_to_pcd(
         print("[ERROR] 未找到 Livox CustomMsg 点云数据!", file=sys.stderr)
         return None
 
-    output_path = os.path.join(output_dir, pcd_name)
+    output_path = safe_join(output_dir, pcd_name)
     intensities = np.array(all_intensities, dtype=np.float32)
     save_pcd_with_intensity(all_points, intensities, output_path)
     return output_path
@@ -267,20 +276,20 @@ def select_and_save_points(pcd_folder, target_pcd_name):
 
     # 生成保存文件名 (与 PCD 文件同名，改为 txt)
     base_name = os.path.splitext(target_pcd_name)[0]
-    save_file = os.path.join(pcd_folder, f"{base_name}.txt")
+    save_file = safe_join(pcd_folder, f"{base_name}.txt")
 
-    with open(save_file, 'w') as f:
-        f.write("# 4 selected points (x y z)\n")
-        for p in selected_points:
-            f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
+    parts = ['# 4 selected points (x y z)\n']
+    for p in selected_points:
+        parts.append('%.6f %.6f %.6f\n' % (p[0], p[1], p[2]))
 
-        f.write("# range values in order:\n")
-        f.write(f"x_min: {x_min:.1f}\n")
-        f.write(f"x_max: {x_max:.1f}\n")
-        f.write(f"y_min: {y_min:.1f}\n")
-        f.write(f"y_max: {y_max:.1f}\n")
-        f.write(f"z_min: {z_min:.1f}\n")
-        f.write(f"z_max: {z_max:.1f}\n")
+    parts.append('# range values in order:\n')
+    parts.append('x_min: %.1f\n' % x_min)
+    parts.append('x_max: %.1f\n' % x_max)
+    parts.append('y_min: %.1f\n' % y_min)
+    parts.append('y_max: %.1f\n' % y_max)
+    parts.append('z_min: %.1f\n' % z_min)
+    parts.append('z_max: %.1f\n' % z_max)
+    Path(save_file).write_text("".join(parts), encoding="utf-8")
 
     print(f"[Save] 已保存选点与范围到: {save_file}")
     print("点云处理完成。")

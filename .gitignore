@@ -62,3 +62,6 @@ __pycache__/
 
 # FAST-LIVO2 运行日志与输出
 /FAST-LIVO2/Log/
+
+# ZCode 会话内部产物（计划/缓存），不入库
+.zcode/

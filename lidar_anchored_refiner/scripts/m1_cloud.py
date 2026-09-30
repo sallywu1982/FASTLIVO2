@@ -6,6 +6,7 @@ All checks are self-contained: nothing is taken from prior work.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import sys
 
 import numpy as np
@@ -98,19 +99,31 @@ def build_cloud(s, R_e2p, t_e2p):
 
 def write_ply(path, xyz, rgb):
     n = xyz.shape[0]
-    with open(path, "wb") as f:
-        hdr = (
-            "ply\nformat binary_little_endian 1.0\n"
-            f"element vertex {n}\n"
-            "property float x\nproperty float y\nproperty float z\n"
-            "property uchar red\nproperty uchar green\nproperty uchar blue\n"
-            "end_header\n"
-        )
-        f.write(hdr.encode("ascii"))
-        rec = np.zeros(n, dtype=[("xyz", "<f4", 3), ("rgb", "u1", 3)])
-        rec["xyz"] = xyz
-        rec["rgb"] = rgb
-        f.write(rec.tobytes())
+    work_rp = os.path.realpath(paths.WORK_DIR)
+    path = os.path.realpath(path)
+    if os.path.commonpath([path, work_rp]) != work_rp:
+        raise ValueError("PLY output path escapes work dir: %s" % path)
+    hdr = (
+        "ply
+format binary_little_endian 1.0
+"
+        f"element vertex {n}
+"
+        "property float x
+property float y
+property float z
+"
+        "property uchar red
+property uchar green
+property uchar blue
+"
+        "end_header
+"
+    )
+    rec = np.zeros(n, dtype=[("xyz", "<f4", 3), ("rgb", "u1", 3)])
+    rec["xyz"] = xyz
+    rec["rgb"] = rgb
+    Path(path).write_bytes(hdr.encode("ascii") + rec.tobytes())
     print("wrote", path, f"({os.path.getsize(path)/1e6:.1f} MB)")
 
 

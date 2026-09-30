@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 import sys
 
 import cv2
@@ -138,8 +139,11 @@ def main():
     best = results[0]
     conv = {"att": best[2], "ext": best[3], "time_base_offset": best[4],
             "score": best[0], "frac": best[1]}
-    with open(os.path.join(WORK, "convention2.json"), "w", encoding="utf-8") as f:
-        json.dump(conv, f, indent=2)
+    conv2_path = os.path.realpath(os.path.join(WORK, "convention2.json"))
+    work_rp = os.path.realpath(WORK)
+    if os.path.commonpath([conv2_path, work_rp]) != work_rp:
+        raise ValueError("output path escapes work dir: %s" % conv2_path)
+    Path(conv2_path).write_text(json.dumps(conv, indent=2), encoding="utf-8")
     print("saved:", conv)
 
 
